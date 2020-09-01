@@ -1,6 +1,7 @@
 from selenium import webdriver
 import bs4
 import pandas as pd
+import re
 import numpy as np
 
 import os
@@ -26,8 +27,8 @@ class JobSearchWebsite(object):
     resultElementTag = 'span'
     resultTag = 'search-results'
     resultMarkers = ['<div data-cy="search-result-headers">', 'jobs found based on your filters']
-    jobcardlistMarker = 'card-list'
-    jobcardMarker = 'job-card-'
+    cardTag = 'job-card-'
+    jobs = {'records':None,'filename':'jobopenings.csv'}
     cardsPerPage = 20
     searchFieldsd = {}
     search_defaults = {}
@@ -47,6 +48,8 @@ class JobSearchWebsite(object):
         self.search_defaults = search_defaults
         if load_driver:
             self.loadDriver()
+        if os.path.exists(self.jobs['filename']):
+            self.jobs['records'] = pd.read_csv(self.jobs['filename'])
 
     def loadDriver(self):
         self.driver = webdriver.Chrome(executable_path=os.path.abspath('chromedriver'), options=chrome_options)
@@ -130,10 +133,117 @@ class JobSearchWebsite(object):
             resDict = {'query jobs': resPair[0], 'total jobs': resPair[0]}
         return resDict
 
-    def get_jobcards_bypage(self, qryURL, page=0):
-        # returns a list of soup tags objects
-        newURL = qryURL.replace(qryURL[qryURL.find('&page='):], '&page=' + str(page))
-        self.refresh_pageSoup(newURL)
-        cardlist = self.pageSoup.findAll('div', {'class': self.jobcardlistMarker})
-        cards = [cardlist[0].findAll('div', {'id': self.jobcardMarker + str(i)})[0] for i in range(self.cardsPerPage)]
-        return cards
+    def get_jobRecord_fromcard(self,cardObj):
+        # salary
+        def get_salaryHigh(cardObj):
+            salary_divTag = 'lh-solid'  # unique tag identifier for the salary information
+            divTags = cardObj.find_all('div')
+            salaryDiv = [y for y in [x for x in divTags if
+                                     x.has_attr('class')] if salary_divTag in y['class']][0]
+            salaryHighStr = salaryDiv.text.split('to')[1]  # $8,000 (str)
+            salaryHigh = int(salaryHighStr.replace(',', '').replace('$', ''))  # 8000 (int)
+            return salaryHigh
+
+        # title
+        def get_position_title(cardObj):
+            title_keyword = 'job-title'  # unique tag identifier
+            titleHeader = [y for y in cardObj.find_all('h1') if title_keyword in str(y)][0]
+            leftbloc = 'data-cy="job-card__job-title">'
+            rightbloc = '</h1>'
+            titleStr = re.search(leftbloc + '(.*)' + rightbloc, str(titleHeader)).group(1)
+            return titleStr
+
+        # posted date
+        def get_posted_date(cardObj):
+            posted_keyword = 'last-posted-date'  # unique tag identifier
+            postedSection = [y for y in cardObj.find_all('section') if posted_keyword in str(y)][0]
+            leftbloc = 'data-cy="job-card__last-posted-date">'
+            rightbloc = '</span></section>'
+            postedStr = re.search(leftbloc + '(.*)' + rightbloc, str(postedSection)).group(1)
+            leftbloc2 = 'Posted '
+            daysStr_1 = re.search(leftbloc2 + '(.*)', postedStr).group(1)
+
+            # convert from x days ago to datetime.date
+            todayDate = dt.datetime.today().date()
+            dayShift = 0
+            if daysStr_1 == 'today':
+                postedDate = todayDate
+            elif daysStr_1 == 'yesterday':
+                dayShift = 1
+            else:
+                rightbloc2 = ' days ago'
+                try:
+                    dayShift = int(re.search('(.*)' + rightbloc2, daysStr_1).group(1))
+                except:
+                    jobid = get_jobid(cardObj)
+                    print('jobid: %s, original: %s, left filter: %s' % (jobid,postedStr, daysStr_1))
+
+            postedDate = todayDate - dt.timedelta(days=dayShift)
+            return postedDate
+
+        # company name
+        def get_company_name(cardObj):
+            company_keyword = 'company-hire-info__company'  # unique tag identifier
+            companyP = [y for y in cardObj.find_all('p') if company_keyword in str(y)][0]
+            leftbloc = 'data-cy="company-hire-info__company">'
+            rightbloc = '</p>'
+            companyStr = re.search(leftbloc + '(.*)' + rightbloc, str(companyP)).group(1)
+            return companyStr
+
+        # job id
+        def get_jobid(cardObj):
+            url_keyword = 'JobCard__card'  # unique tag identifier
+            urlA = [y for y in cardObj.find_all('a') if url_keyword in str(y)][0]
+            leftbloc = 'href="/job/'
+            rightbloc = '"><div class="w-80-l w-100 flex flex-wrap'
+            prjidStr = re.search(leftbloc + '(.*)' + rightbloc, str(urlA)).group(1)
+            return prjidStr
+
+        jobRecord = {}
+        jobRecord['salaryHigh'] = get_salaryHigh(cardObj)
+        jobRecord['position_title'] = get_position_title(cardObj)
+        jobRecord['posted_date'] = get_posted_date(cardObj)
+        jobRecord['company_name'] = get_company_name(cardObj)
+        jobRecord['jobid'] = get_jobid(cardObj)
+        return jobRecord
+
+    def jobRecords_query(self,salary, category, employmentType):
+        cardcount = 1; page = 0
+        while cardcount > 0:
+            qryURL = self.jobsearch_URLquery(salary, category, employmentType, page)
+            self.refresh_pageSoup(qryURL)
+
+            # list of cards using the tag 'job-card-'
+            cards = [y for y in [x for x in self.pageSoup.find_all('div')
+                                 if x.has_attr('id')] if self.cardTag in y['id']]
+            cardcount = len(cards)
+            if cardcount > 0:
+                # create DataFrame object from card objects
+                if page == 0:
+                    jobs = pd.DataFrame.from_records([self.get_jobRecord_fromcard(x) for x in cards])
+                else:
+                    morejobs = pd.DataFrame.from_records([self.get_jobRecord_fromcard(x) for x in cards])
+                    jobs = jobs.append(morejobs)
+            page = page + 1
+
+        return jobs
+
+    def update_jobRecords(self):
+        qrycount=0
+        for salary in self.salaryLevels:
+            for cat in self.categories:
+                if qrycount == 0:
+                    jobs = self.jobRecords_query(salary, cat, self.employmentType)
+                else:
+                    morejobs = self.jobRecords_query(salary, cat, self.employmentType)
+                    jobs = jobs.append(morejobs)
+                qrycount = qrycount +1
+
+        if self.jobs['records'] is None:
+            self.jobs['records'] = jobs
+        else:
+            self.jobs['records'] = self.jobs['records'].append(jobs)
+            self.jobs['records'].drop_duplicates(subset=['jobid'],inplace=True)
+            self.jobs['records'].reset_index(inplace=True)
+            del self.jobs['records']['index']
+        self.jobs['records'].to_csv(self.jobs['filename'],index=False)
