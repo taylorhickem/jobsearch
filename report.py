@@ -3,12 +3,14 @@
 
 # load packages
 import agent
+import sys
 import time
 import datetime as dt
 import bs4
 import re
 import datetime as dt
 import pandas as pd
+import gsheet.api as gs
 
 # load an instance of JobSearchWebsite --> jobsite
 jobsite = None
@@ -155,11 +157,46 @@ def update_jobRecords():
     nowtimeStr = dt.datetime.strftime(dt.datetime.now(), '%Y-%m-%d %H:%M:%S')
     print('report created at %s' % nowtimeStr)
 
+#02 update report with google spreadsheet
+def post_jobs_to_gsheet(jobs):
+    wkbid = '1JiB-ofvyimIOZ9vVxF22xIyXybIP5FCyo6N_x-pvmCs'
+    rngid = 'MCF_openings!A2:E'
+    engine = gs.SheetsEngine()
+
+    #values is a 2D list [[]]
+    values = jobs.values.astype('str').tolist()
+    engine.clear_rangevalues(wkbid,rngid)
+    #write values - this method writes everything as a string
+    engine.set_rangevalues(wkbid,rngid,values)
+
+def update_jobs_report(from_file=False):
+    #01 query job openings from MyCareerFutures website
+    if from_file:
+        jobs=pd.read_csv('jobopenings.csv')
+    else:
+        load()
+        categories = ['Consulting','Engineering','Design']
+        salaryLevels = [6000]
+        jobsite.set_report_parameters(salaryLevels,categories)
+        jobsite.update_jobRecords()
+        jobs = jobsite.jobs['records']
+
+    #02 post the results to the google spreadsheet
+    post_jobs_to_gsheet(jobs)
+    print('jobs report updated.')
+
 # customize how this script runs
 
 def autorun():
-    load()
-    update_jobRecords()
+    if len(sys.argv)>1:
+        process_name = sys.argv[1]
+        if process_name == 'update_jobs_report':
+            update_jobs_report()
+        elif process_name == 'update_jobRecords':
+            update_jobRecords()
+    else:
+        print('no report specified')
 
 if __name__ == "__main__":
     autorun()
+
