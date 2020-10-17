@@ -160,7 +160,7 @@ def update_jobRecords():
 #02 update report with google spreadsheet
 def post_jobs_to_gsheet(jobs):
     wkbid = '1JiB-ofvyimIOZ9vVxF22xIyXybIP5FCyo6N_x-pvmCs'
-    rngid = 'MCF_openings!A2:E'
+    rngid = 'MCF_openings!A2:F'
     engine = gs.SheetsEngine()
 
     #values is a 2D list [[]]

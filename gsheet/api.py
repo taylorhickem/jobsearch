@@ -382,6 +382,3 @@ def get_rangedata():
 
 if __name__ == '__main__':
     autorun()
-
-#this is a modification
-print('hello world')
