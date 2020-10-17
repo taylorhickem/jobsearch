@@ -10,14 +10,18 @@ from selenium.webdriver.chrome.options import Options
 import datetime as dt
 from timeit import default_timer as timer
 import time
+import database
 
 chrome_options = Options()
 chrome_options.add_argument("--headless")
 #chrome_options.binary_location = '/Applications/Google Chrome
 
+files = {'job_openings':'jobopenings.csv'}
+
 class JobSearchWebsite(object):
     report_folder = ''
     data = None
+    data_source = ''
     report = None
     driver = None
     pageSoup = None
@@ -28,7 +32,7 @@ class JobSearchWebsite(object):
     resultTag = 'search-results'
     resultMarkers = ['<div data-cy="search-result-headers">', 'jobs found based on your filters']
     cardTag = 'job-card-'
-    jobs = {'records':None,'filename':'jobopenings.csv'}
+    jobs = {'records':None,'filename':None}
     cardsPerPage = 20
     searchFieldsd = {}
     search_defaults = {}
@@ -41,15 +45,23 @@ class JobSearchWebsite(object):
 
     def __init__(self, name='MyCareerFutures', mainURL='https://www.mycareersfuture.sg/',
                  searchFields={'salary', 'employmentType', 'category'},
-                 search_defaults={'sort': 'new_posting_date', 'page': 0}, load_driver=True):
+                 search_defaults={'sort': 'new_posting_date', 'page': 0},
+                 load_driver=True,data_source='db'):
+        global files
         self.name = name
         self.mainURL = mainURL
         self.searchFields = searchFields
         self.search_defaults = search_defaults
+        self.data_source = data_source
+        self.jobs['filename'] = files['job_openings']
+        database.load()
         if load_driver:
             self.loadDriver()
         if os.path.exists(self.jobs['filename']):
-            self.jobs['records'] = pd.read_csv(self.jobs['filename'])
+            if data_source == 'db':
+                self.jobs['records'] = database.get_jobs().copy()
+            elif data_source == 'csv':
+                self.jobs['records'] = pd.read_csv(self.jobs['filename'])
 
     def loadDriver(self):
         self.driver = webdriver.Chrome(executable_path=os.path.abspath('chromedriver'), options=chrome_options)
@@ -226,6 +238,7 @@ class JobSearchWebsite(object):
                     jobs = jobs.append(morejobs)
             page = page + 1
 
+        jobs['source'] = self.name
         return jobs
 
     def update_jobRecords(self):
@@ -239,6 +252,10 @@ class JobSearchWebsite(object):
                     jobs = jobs.append(morejobs)
                 qrycount = qrycount +1
 
+        #post new jobs to csv file
+        jobs.to_csv(self.jobs['filename'],index=False)
+
+        #update database with new jobs
         if self.jobs['records'] is None:
             self.jobs['records'] = jobs
         else:
@@ -246,4 +263,4 @@ class JobSearchWebsite(object):
             self.jobs['records'].drop_duplicates(subset=['jobid'],inplace=True)
             self.jobs['records'].reset_index(inplace=True)
             del self.jobs['records']['index']
-        self.jobs['records'].to_csv(self.jobs['filename'],index=False)
+        database.add_jobs(self.jobs['records'],append=False)
