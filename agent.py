@@ -187,8 +187,8 @@ class JobSearchWebsite(object):
                 try:
                     dayShift = int(re.search('(.*)' + rightbloc2, daysStr_1).group(1))
                 except:
-                    jobid = get_jobid(cardObj)
-                    print('jobid: %s, original: %s, left filter: %s' % (jobid,postedStr, daysStr_1))
+                    urlid = get_urlid(cardObj)
+                    print('urlid: %s, original: %s, left filter: %s' % (urlid,postedStr, daysStr_1))
 
             postedDate = todayDate - dt.timedelta(days=dayShift)
             return postedDate
@@ -202,8 +202,8 @@ class JobSearchWebsite(object):
             companyStr = re.search(leftbloc + '(.*)' + rightbloc, str(companyP)).group(1)
             return companyStr
 
-        # job id
-        def get_jobid(cardObj):
+        # url id
+        def get_urlid(cardObj):
             url_keyword = 'JobCard__card'  # unique tag identifier
             urlA = [y for y in cardObj.find_all('a') if url_keyword in str(y)][0]
             leftbloc = 'href="/job/'
@@ -211,12 +211,20 @@ class JobSearchWebsite(object):
             prjidStr = re.search(leftbloc + '(.*)' + rightbloc, str(urlA)).group(1)
             return prjidStr
 
+        # job id
+        def get_jobid(job_dict):
+            jobid = '-'.join([job_dict['source'],
+                              job_dict['urlid'][-32:],
+                              job_dict['posted_date']])
+            return jobid
+
         jobRecord = {}
         jobRecord['salaryHigh'] = get_salaryHigh(cardObj)
         jobRecord['position_title'] = get_position_title(cardObj)
         jobRecord['posted_date'] = get_posted_date(cardObj)
         jobRecord['company_name'] = get_company_name(cardObj)
-        jobRecord['jobid'] = get_jobid(cardObj)
+        jobRecord['urlid'] = get_urlid(cardObj)
+        jobRecord['jobid'] = get_jobid(jobRecord)
         return jobRecord
 
     def jobRecords_query(self,salary, category, employmentType):
@@ -239,6 +247,7 @@ class JobSearchWebsite(object):
             page = page + 1
 
         jobs['source'] = self.name
+
         return jobs
 
     def update_jobRecords(self):
