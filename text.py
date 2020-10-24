@@ -1,4 +1,4 @@
-import nltk
+#import nltk
 import ssl
 import re
 from nltk.corpus import stopwords
@@ -8,6 +8,11 @@ import numpy as np
 
 jobs = {'titles':None,'titles_filename':'position_titles.csv',
         'data':None,'filename':'jobopenings.csv'}
+
+tags = None
+match = None
+
+score_key = {}
 
 generic_titles = ['engineer','manager','developer','officer','designer','research','controller','supervisor',
                   'operator','consultant','scientist','analyst','machinist','advisor',
@@ -50,15 +55,15 @@ tagLists = {'generic':generic_titles, 'modifier': modifiers, 'field':fields, 'lo
 
 #01 download stopwords
 
-def nltk_load():
-    try:
-        _create_unverified_https_context = ssl._create_unverified_context
-    except AttributeError:
-        pass
-    else:
-        ssl._create_default_https_context = _create_unverified_https_context
+#def nltk_load():
+#    try:
+#        _create_unverified_https_context = ssl._create_unverified_context
+#    except AttributeError:
+#        pass
+#    else:
+#        ssl._create_default_https_context = _create_unverified_https_context
 
-    nltk.download('stopwords')
+    #nltk.download('stopwords')
 
 #02 title cleanup
 
@@ -93,10 +98,19 @@ def load_jobs(df=None):
         jobs['data'] = df
 
 #load tags from dataframe
-def load_tags(tags):
-    global generic_titles, modifiers, fields, locations, ranks, tagLists
-    for t in tagLists:
-        tagLists[t] = tags[tags['tag_type'] == t]['tag'].tolist()
+def load_tags(df):
+    global tags, score_key, generic_titles, modifiers, fields, locations, ranks, tagLists
+    tags = df.copy()
+    for tt in tagLists:
+        tagLists[tt] = tags[tags['tag_type'] == tt]['tag'].tolist()
+        tag_scores = {}
+        for tg in tagLists[tt]:
+            scoreStr = tags[(tags['tag_type'] == tt) & (tags['tag'] == tg)]['score'].iloc[0]
+            if scoreStr is not None:
+                tag_scores[tg] = int(scoreStr)
+            else:
+                tag_scores[tg] = scoreStr
+        score_key[tt] = tag_scores.copy()
 
     generic_titles = tagLists['generic']
     modifiers = tagLists['modifier']
@@ -106,7 +120,7 @@ def load_tags(tags):
 
 def cleanup_job_titles():
     global jobs
-    titledata = pd.DataFrame({'clean title': jobs['data'].apply(
+    titledata = pd.DataFrame({'clean_title': jobs['data'].apply(
         lambda x: cleanup(x['position_title']), axis=1),
         'jobid':jobs['data']['jobid'],
         'posted_date':jobs['data']['posted_date'],
@@ -123,26 +137,49 @@ def extractTags(rawStr,tagList,tagsAsHash=True):
             residual = residual.replace(tag,'')
     if tagsAsHash:
         hashStr = ':'.join(extracted)
-        return residual,hashStr
+        return residual, hashStr
     else:
         return residual, extracted
 
-def classify_title(titleStr):
+def extract_tags_from_title(titleStr):
     residual = titleStr
     tagHashes = []
     for tagList in [generic_titles, modifiers, fields, locations, ranks]:
         residual, tagHash = extractTags(residual,tagList)
         tagHashes.append(tagHash.strip())
+    return residual, tagHashes
+
+def classify_title(titleStr):
+    residual, tagHashes = extract_tags_from_title(titleStr)
     generic = tagHashes[0]; modify = tagHashes[1]; field = tagHashes[2]
     location = tagHashes[3] ; rank = tagHashes[4]
-    return residual.strip(), generic, modify, field, location, rank
+    match_score = score_title(dict(zip(['generic','modifier','field','location','rank'],tagHashes)))
+    return match_score, residual.strip(), generic, modify, field, location, rank
+
+def score_title(tagHashes):
+    'apply score from the list of tags using the score key'
+    global score_key
+    def hash_scores(tag_type,tagHash):
+        tags = tagHash.split(':')
+        tag_scores = [None if tg == '' else score_key[tag_type][tg] for tg in tags]
+        return tag_scores
+
+    scores = [s for tt in tagHashes for s in hash_scores(tt,tagHashes[tt])]
+    match_score = None
+    if -1 in scores:
+        match_score = -1
+    else:
+        match_score = sum([0 if x is None else x for x in scores])
+
+    return match_score
 
 def extract_classify_titles():
     global jobs
     titledata = jobs['titles']
+    titledata['match_auto'], \
     titledata['residual'], titledata['generic'], titledata['modifier'], \
         titledata['field'], titledata['location'], titledata['rank']= \
-        zip(*titledata['clean title'].map(classify_title))
+        zip(*titledata['clean_title'].map(classify_title))
     jobs['titles'] = titledata.copy()
 
 def run_jobtitle_report():
