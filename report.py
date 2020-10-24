@@ -11,6 +11,7 @@ import re
 import datetime as dt
 import pandas as pd
 import database as db
+import match
 
 # load an instance of JobSearchWebsite --> jobsite
 jobsite = None
@@ -77,10 +78,19 @@ def update_jobs_report(from_file=False):
         jobsite.set_report_parameters(salaryLevels,categories)
         jobsite.update_jobRecords()
         jobs = jobsite.jobs['records']
+        match.load_db()
+        screen_jobs()
 
     #02 post the results to the google spreadsheet
     db.post_jobs_to_gsheet(jobs)
     print('jobs report updated.')
+
+def screen_jobs():
+    match.load_db()
+    match.screen_jobs()
+
+def get_monday(dateValue):
+    return dateValue-dt.timedelta(days=dateValue.weekday())
 
 def get_mondays(date_series):
     return date_series.apply(lambda x:x-dt.timedelta(days=x.weekday()))
@@ -105,6 +115,8 @@ def autorun():
             update_jobs_report()
         elif process_name == 'update_jobRecords':
             update_jobRecords()
+        elif process_name == 'screen_jobs':
+            screen_jobs()
     else:
         print('no report specified')
 
