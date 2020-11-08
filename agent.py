@@ -215,7 +215,7 @@ class JobSearchWebsite(object):
         def get_jobid(job_dict):
             jobid = '-'.join([job_dict['source'],
                               job_dict['urlid'][-32:],
-                              job_dict['posted_date']])
+                              dt.datetime.strftime(job_dict['posted_date'],'%Y-%m-%d')])
             return jobid
 
         jobRecord = {}
@@ -224,6 +224,7 @@ class JobSearchWebsite(object):
         jobRecord['posted_date'] = get_posted_date(cardObj)
         jobRecord['company_name'] = get_company_name(cardObj)
         jobRecord['urlid'] = get_urlid(cardObj)
+        jobRecord['source'] = self.name
         jobRecord['jobid'] = get_jobid(jobRecord)
         return jobRecord
 
@@ -245,8 +246,6 @@ class JobSearchWebsite(object):
                     morejobs = pd.DataFrame.from_records([self.get_jobRecord_fromcard(x) for x in cards])
                     jobs = jobs.append(morejobs)
             page = page + 1
-
-        jobs['source'] = self.name
 
         return jobs
 
