@@ -2,13 +2,13 @@
 ###
 
 # load packages
+import mcf_profile
 import agent
 import sys
 import time
 import datetime as dt
 import bs4
 import re
-import datetime as dt
 import pandas as pd
 import database as db
 import match
@@ -89,6 +89,11 @@ def screen_jobs():
     match.load_db()
     match.screen_jobs()
 
+def update_job_profiles(limit=200):
+    #200 records ~ 15 minute runtime
+    mcf_profile.load()
+    mcf_profile.update_job_profiles(limit)
+
 def get_monday(dateValue):
     return dateValue-dt.timedelta(days=dateValue.weekday())
 
@@ -117,6 +122,12 @@ def autorun():
             update_jobRecords()
         elif process_name == 'screen_jobs':
             screen_jobs()
+        elif process_name == 'update_job_profiles':
+            if len(sys.argv)>2:
+                limit = int(sys.argv[2])
+                update_job_profiles(limit)
+            else:
+                update_job_profiles()
     else:
         print('no report specified')
 
