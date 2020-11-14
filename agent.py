@@ -63,6 +63,12 @@ class JobSearchWebsite(object):
             elif data_source == 'csv':
                 self.jobs['records'] = pd.read_csv(self.jobs['filename'])
 
+    def __del__(self):
+        try:
+            self.driver.quit()
+        except:
+            pass
+
     def loadDriver(self):
         self.driver = webdriver.Chrome(executable_path=os.path.abspath('chromedriver'), options=chrome_options)
 

@@ -33,7 +33,7 @@ def load(loadsheet=True):
         load_gsheet()
 
 def load_inspector():
-    global inspector
+    global inspector, table_names
     inspector = Inspector.from_engine(engine)
     table_names = inspector.get_table_names()
 
@@ -51,6 +51,14 @@ def table_exists(tableName):
     global inspector, table_names
     load_inspector()
     return tableName in table_names
+
+def update_table(tbl,tblname,append=True):
+    global engine
+    if append:
+        ifex = 'append'
+    else:
+        ifex = 'replace'
+    tbl.to_sql(tblname, con=engine, if_exists=ifex, index=False)
 
 def add_jobs(jobs,append=True):
     global engine
