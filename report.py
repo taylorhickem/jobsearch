@@ -57,7 +57,8 @@ def run_screening_report():
 
 # 01.04 run job records report
 def update_jobRecords():
-    categories = ['Consulting','Engineering','Design']
+    categories = ['Consulting','Engineering','Professional Services',
+                  'Science','Environment','Information Technology','Manufacturing']
     #categories = ['Consulting','Engineering','Design','Sciences / Laboratory / R&D','Education and Training','Manufacturing',
     #              'Information Technology','Healthcare / Pharmaceutical', 'Logistics / Supply Chain',
     #              'Risk Management','Others']
