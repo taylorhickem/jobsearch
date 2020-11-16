@@ -30,7 +30,7 @@ class JobSearchWebsite(object):
     parserStr = "html5lib"
     resultElementTag = 'span'
     resultTag = 'search-results'
-    resultMarkers = ['<div data-cy="search-result-headers">', 'jobs found based on your filters']
+    resultMarkers = ['<div data-cy="search-result-headers">', 'jobs found']
     cardTag = 'job-card-'
     jobs = {'records':None,'filename':None}
     cardsPerPage = 20
@@ -86,16 +86,16 @@ class JobSearchWebsite(object):
         data = []
         report_date = dt.datetime.now().date()
         report_start = timer()
-        for cat in self.categories:
+        for search in self.categories:
             for salary in self.salaryLevels:
                 checkpoint = timer()
                 #          date ,     source, location,         emp type, category, salary, matching jobs, jobs total
-                qryResult = self.jobsearchQuery(salary, cat, self.employmentType)
+                qryResult = self.jobsearchQuery(salary, search, self.employmentType)
                 queryJobs = qryResult['query jobs']
                 totalJobs = qryResult['total jobs']
-                rcdRow = [report_date, self.name, self.location, self.employmentType, cat, salary, queryJobs, totalJobs]
+                rcdRow = [report_date, self.name, self.location, self.employmentType, search, salary, queryJobs, totalJobs]
                 data.append(rcdRow)
-            print('query complete for job %s in %.2f seconds' % (cat, timer() - checkpoint))
+            print('query complete for job %s in %.2f seconds' % (search, timer() - checkpoint))
         # create pandas dataframe for job search records and export to csv
         self.data = pd.DataFrame.from_records(data, columns=self.reportFields)
         self.data.to_csv(self.report_folder + '\\jobsearchdata.csv')
@@ -106,8 +106,8 @@ class JobSearchWebsite(object):
         self.report.to_csv(self.report_folder + '\\jobsearchreport.csv')
         print('job report complete in %.2f min' % (1 / 60 * (timer() - report_start)))
 
-    def jobsearchQuery(self, salary=1000, category='Professional Services', employmentType='Full Time'):
-        qryURL = self.jobsearch_URLquery(salary, category, employmentType, page=self.search_defaults['page'])
+    def jobsearchQuery(self, salary=1000, search='Professional Services'):
+        qryURL = self.jobsearch_URLquery(salary, search, page=self.search_defaults['page'])
         qryResult = self.get_searchResults(qryURL)
         return qryResult
 
@@ -120,11 +120,10 @@ class JobSearchWebsite(object):
         qURL = main + 'search?' + queryStr + '&sort=' + sort + '&page=' + str(page)
         return qURL
 
-    def jobsearch_URLquery(self, salary, category, employmentType, page=0):
+    def jobsearch_URLquery(self, salary, search, page=0):
         filters = {}
+        filters['search'] = search;
         filters['salary'] = salary;
-        filters['employmentType'] = employmentType;
-        filters['category'] = category
         qryURL = self.url_query(self.mainURL, filters, sort=self.search_defaults['sort'], page=page)
         return qryURL
 
@@ -143,7 +142,10 @@ class JobSearchWebsite(object):
         divStr = [str(x.div) for x in elmList if self.resultTag in str(x)][0]
         markers = [divStr.find(self.resultMarkers[x]) for x in [0, 1]]
         resultStr = divStr[markers[0] + len(self.resultMarkers[0]):markers[1] - 1]
-        strPairs = [x.strip().replace(',', '') for x in resultStr.split('of')]
+        if 'of' in resultStr:
+            strPairs = [x.strip().replace(',', '') for x in resultStr.split('of')]
+        else:
+            strPairs = [x.strip().replace(',', '') for x in [resultStr,resultStr]]
         resPair = [0 if x == '' else int(x) for x in strPairs]
         if len(resPair) == 2:
             resDict = {'query jobs': resPair[0], 'total jobs': resPair[1]}
@@ -234,10 +236,10 @@ class JobSearchWebsite(object):
         jobRecord['jobid'] = get_jobid(jobRecord)
         return jobRecord
 
-    def jobRecords_query(self,salary, category, employmentType):
+    def jobRecords_query(self,salary, search):
         cardcount = 1; page = 0
         while cardcount > 0:
-            qryURL = self.jobsearch_URLquery(salary, category, employmentType, page)
+            qryURL = self.jobsearch_URLquery(salary, search, page)
             self.refresh_pageSoup(qryURL)
 
             # list of cards using the tag 'job-card-'
@@ -258,11 +260,11 @@ class JobSearchWebsite(object):
     def update_jobRecords(self):
         qrycount=0
         for salary in self.salaryLevels:
-            for cat in self.categories:
+            for search in self.categories:
                 if qrycount == 0:
-                    jobs = self.jobRecords_query(salary, cat, self.employmentType)
+                    jobs = self.jobRecords_query(salary, search)
                 else:
-                    morejobs = self.jobRecords_query(salary, cat, self.employmentType)
+                    morejobs = self.jobRecords_query(salary, search)
                     jobs = jobs.append(morejobs)
                 qrycount = qrycount +1
 
