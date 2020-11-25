@@ -8,12 +8,30 @@ import gsheet.api as gs
 engine = None
 inspector = None
 gs_engine = None
+NUMERIC_TYPES = ['int','float']
 SQL_DB_NAME = 'sqlite:///jobs.db'
 GSHEET_CONFIG = {'wkbid':'1JiB-ofvyimIOZ9vVxF22xIyXybIP5FCyo6N_x-pvmCs',
-                 'openings':'openings!A2:H',
-                 'screened':'screened!A2:I',
-                 'tags':'tags!A2:D',
-                   }
+                 'openings':{'data':'openings!A2:H',
+                             'header':'openings!A1:H1'},
+                 'screened':{'data':'screened!A2:M',
+                             'header':'screened!A1:M1'},
+                 'title_tags':{'data':'title_tags!A2:D',
+                               'header':'title_tags!A1:D1',
+                               'data_types':{'tag':'str',
+                                             'industry':'str',
+                                             'count':'float',
+                                             'score':'int'}},
+                 'junk_tags':{'data':'junk_tags!A2:A',
+                              'header':'junk_tags!A1'},
+                 'rank_tags':{'data':'rank_tags!A2:B',
+                              'header':'rank_tags!A1:B1',
+                              'data_types': {'tag': 'str',
+                                             'weight_score': 'float'}},
+                 'industries': {'data': 'industries!A2:B',
+                               'header': 'industries!A1:B1',
+                               'data_types': {'industry_classification': 'str',
+                                              'match': 'int'}},
+                 }
 
 table_names = []
 
@@ -90,10 +108,6 @@ def get_jobs():
     jobs = pd.read_sql_table('job',con=engine)
     return jobs
 
-def get_tags():
-    tags = pd.read_sql_table('tag',con=engine)
-    return tags
-
 def get_table(tableName):
     if table_exists(tableName):
         tbl = pd.read_sql_table(tableName,con=engine)
@@ -111,7 +125,7 @@ def load_gsheet():
 def post_to_gsheet(df,rng_code):
     #values is a 2D list [[]]
     wkbid = GSHEET_CONFIG['wkbid']
-    rngid = GSHEET_CONFIG[rng_code]
+    rngid = GSHEET_CONFIG[rng_code]['data']
     values = df.values.astype('str').tolist()
     gs_engine.clear_rangevalues(wkbid,rngid)
     #write values - this method writes everything as a string
@@ -120,9 +134,40 @@ def post_to_gsheet(df,rng_code):
 def post_jobs_to_gsheet(df):
     post_to_gsheet(df,'openings')
 
-def update_tags():
+#----------------------------------------------------------------------------------------
+#Work in progress
+#----------------------------------------------------------------------------------------
+
+def get_sheet(rng_code):
     wkbid = GSHEET_CONFIG['wkbid']
-    rngid = GSHEET_CONFIG['tags']
-    taglist = gs_engine.get_rangevalues(wkbid,rngid)
-    tags = pd.DataFrame(taglist, columns=['tag', 'tag_type','group','score'])
-    tags.to_sql('tag',con=engine,if_exists='replace',index=False)
+    rng_config = GSHEET_CONFIG[rng_code]
+    rngid = rng_config['data']; hdrid = rng_config['header']
+    valueList = gs_engine.get_rangevalues(wkbid,rngid)
+    header = gs_engine.get_rangevalues(wkbid,hdrid)[0]
+    rng = pd.DataFrame(valueList, columns=header)
+    if 'data_types' in rng_config:
+        data_types = rng_config['data_types']
+        for field in data_types:
+            typeId = data_types[field]
+            if not typeId in ['str','date']:
+                if typeId in NUMERIC_TYPES:
+                    #to deal with conversion from '' to nan
+                    rng[field] = pd.to_numeric(rng[field]).astype(typeId)
+                else:
+                    rng[field] = rng[field].astype(typeId)
+    return rng
+
+def get_tags():
+    print('temporarily out of service')
+    return None
+#    tags = pd.read_sql_table('tag',con=engine)
+#    return tags
+
+def update_tags():
+    print('temporarily out of service')
+#    wkbid = GSHEET_CONFIG['wkbid']
+#    rngid = GSHEET_CONFIG['tags']
+#    taglist = gs_engine.get_rangevalues(wkbid,rngid)
+#    tags = pd.DataFrame(taglist, columns=['tag', 'tag_type','group','score'])
+#    tags.to_sql('tag',con=engine,if_exists='replace',index=False)
+
