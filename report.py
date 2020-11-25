@@ -5,6 +5,7 @@
 import mcf_profile
 import agent
 import sys
+import math
 import time
 import datetime as dt
 import bs4
@@ -16,6 +17,7 @@ import match
 # load an instance of JobSearchWebsite --> jobsite
 jobsite = None
 qryResult = None
+DATE_FORMAT = '%Y-%m-%d'
 
 def load(db_only=False):
     global jobsite
@@ -70,24 +72,33 @@ def update_jobRecords():
 
 def update_jobs_report(from_file=False):
     #01 query job openings from MyCareerFutures website
+
     if from_file:
         jobs=pd.read_csv('jobopenings.csv')
     else:
+        starttime = time.time()
         load()
-        categories = ['Consulting','Engineering','Design']
+        jobCount_i = len(db.get_jobs())
+        categories = ['Consulting', 'Engineering', 'Professional Services',
+                      'Science', 'Environment', 'Information Technology', 'Manufacturing']
         salaryLevels = [6000]
         jobsite.set_report_parameters(salaryLevels,categories)
         jobsite.update_jobRecords()
         jobs = jobsite.jobs['records']
-        match.load_db()
+        match.load()
         screen_jobs()
+        new_jobs = len(db.get_jobs())-jobCount_i
+        elapsed = time.time()-starttime
+        e_min = math.floor(elapsed/60)
+        e_sec = elapsed-e_min*60
+    print('added %d new jobs in %d min :%d sec' % (new_jobs,e_min,e_sec))
 
     #02 post the results to the google spreadsheet
     db.post_jobs_to_gsheet(jobs)
     print('jobs report updated.')
 
 def screen_jobs():
-    match.load_db()
+    match.load()
     match.screen_jobs()
 
 def update_job_profiles(limit=200):
@@ -100,6 +111,18 @@ def get_monday(dateValue):
 
 def get_mondays(date_series):
     return date_series.apply(lambda x:x-dt.timedelta(days=x.weekday()))
+
+def get_weeknums(date_str_series):
+    def get_monday(dateValue):
+        return dateValue-dt.timedelta(days=dateValue.weekday())
+    def get_weeknum(dateValue,this_monday):
+        return 1/7*(this_monday-(dateValue-dt.timedelta(days=dateValue.weekday()))).days
+    def convert_date_series(date_series):
+        return date_series.apply(lambda x:dt.datetime.strptime(x,DATE_FORMAT).date())
+    this_monday = get_monday(dt.datetime.now().date())
+    date_series = convert_date_series(date_str_series)
+    weeknums = date_series.apply(lambda x:get_weeknum(x,this_monday))
+    return weeknums
 
 def get_openings_byweek():
     load(db_only=True)

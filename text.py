@@ -5,67 +5,79 @@ from nltk.corpus import stopwords
 import string
 import pandas as pd
 import numpy as np
+import database as db
 
-jobs = {'titles':None,'titles_filename':'position_titles.csv',
-        'data':None,'filename':'jobopenings.csv'}
+from sklearn.linear_model import LogisticRegression
+from sklearn.feature_extraction.text import CountVectorizer
 
-tags = None
-match = None
+#----------------------------------------------------
+#Static variables
+#----------------------------------------------------
 
-score_key = {}
+tag_sheets = {}
+tag_tbls = {}
 
-generic_titles = ['engineer','manager','developer','officer','designer','research','controller','supervisor',
-                  'operator','consultant','scientist','analyst','machinist','advisor',
-                  'programmer','architect','technician','postdoctor','artist','secretary','administrator',
-                 'superintendent','coordinator','surveyor','representative','writer','graduate','counsellor',
-                 'coach','advisory','teacher','partner','chef','secretarial',
-                  'economist','planner','therapist']
+#----------------------------------------------------
+#Setup, initialization
+#----------------------------------------------------
 
-modifiers = ['technical','site','development','technology','production','apac','administrative',
-            'team','corporate','applications','application','system','excellence','integrity',
-             'performance','management','strategy','big','enterprise','experience','company','corporation',
-             'professional','group','solution','service','practice','success','creative','partnership',
-             'commercial','greater','protocol','center','factor','deployment','force','sgunited',
-             'strategic','department']
+def load():
+    'load tags and job profiles from gsheet and sql'
+    db.load()
+    load_gsheet()
+    load_sql()
 
-fields = ['qa','qc','civil','electrical','construction','structural','physical','business','building',
-          'safety','piping','facilities','utility','trading','investment','commissioning','product',
-          'hardware','mining','web','software','maintenance','firmware','python','customer','recruitment',
-          'machine learning','deep learning','automation','robotics','human factors','hse','rotating',
-          'project','schedule','planning','data','validation','verification','digital','optical','scrum',
-          'computer science','failure analysis','fixed equipment','storage','network infrastructure','network architecture',
-         'microcontroller','plant','cyber security','machine','sales','wireless','power','energy','sap','logistic',
-         'microsoft dynamics','ui ux','ux ui','beauty','hyperion','actuarial','financial','amazon','marriage',
-         'apple','google','workday','robotic','cybersecurity','agile','security','blast','health','environmental',
-         'telecom','media','engagement','account','wealth','asset','analytics','client','reliability','java',
-         'blockchain','intelligence','plc','geophysicist','renewable','carbon','footprint','farm','sustainability',
-          'instrument','hairstyle','microbiologist','cloud','ecommerce','it security','academic','talent',
-          'government','cyber','deltav','devops','agtech','innovation','mechanical','entrepreneur','fire',
-          'finance', 'actuary','chemical','mobile app','quality assurance']
+def load_gsheet():
+    load_tags_gsheet()
 
-locations = ['asia pacific','singapore','english','japanese','chinese','southeast asia','asia',
-             'global','region','regional','china','korea','indonesia','vietnam','myanmar','india',
-            'japan','laos','thailand','asean','international']
+def load_sql():
+    load_tags_sql()
 
-ranks = ['senior','junior','sr','principal','lead','leader','fellow','associate','chief','vice president','president',
-         'specialist','staff','mgrs','support','vp','executive','head','director','assistant','master','ceo',
-         'assistant']
+def load_tags_gsheet():
+    global tag_sheets
+    title_tags = db.get_sheet('title_tags')
+    junk_tags = db.get_sheet('junk_tags')
+    rank_tags = db.get_sheet('rank_tags')
+    industries = db.get_sheet('industries')
+    tag_sheets = {'title':{'data':title_tags,
+                           'name':'title_tags'},
+                  'rank':{'data':rank_tags,
+                          'name':'rank_tags'},
+                  'junk':{'data':junk_tags,
+                          'name':'junk_tags'},
+                  'ic': {'data':industries,
+                         'name':'industries'}
+                  }
 
-tagLists = {'generic':generic_titles, 'modifier': modifiers, 'field':fields, 'location':locations, 'rank':ranks}
+def load_tags_sql():
+    global tag_tbls
+    title_tbl = db.get_table('title_tag')
+    junk_tbl = db.get_table('junk_tag')
+    rank_tbl = db.get_table('rank_tag')
+    ic_tbl = db.get_table('industry_classification')
+    tag_tbls = {'title':{'data':title_tbl,
+                         'name':'title_tag'},
+                'rank':{'data':rank_tbl,
+                        'name':'rank_tag'},
+                'junk':{'data':junk_tbl,
+                        'name':'junk_tag'},
+                'ic': {'data':ic_tbl,
+                       'name':'industry_classification'}
+                }
 
-#01 download stopwords
+# ----------------------------------------------------
+# Procedures
+# ----------------------------------------------------
 
-#def nltk_load():
-#    try:
-#        _create_unverified_https_context = ssl._create_unverified_context
-#    except AttributeError:
-#        pass
-#    else:
-#        ssl._create_default_https_context = _create_unverified_https_context
+def push_tag_gsheets_to_sql(skip=[]):
+    for tag_type in tag_sheets:
+        if not tag_type in skip:
+            db.update_table(tag_sheets[tag_type]['data'],
+                            tag_tbls[tag_type]['name'],append=False)
 
-    #nltk.download('stopwords')
-
-#02 title cleanup
+# ----------------------------------------------------
+# Text analysis
+# ----------------------------------------------------
 
 def drop_paren(strValue,parentag='('):
     noparen = strValue
@@ -80,109 +92,85 @@ def drop_paren(strValue,parentag='('):
         noparen = strValue.replace(parentk,'')
     return noparen
 
-def cleanup(strValue):
-    noparen = drop_paren(strValue,'(')
-    noparen = drop_paren(noparen,'[')
-    trimmed = noparen.strip()
-    cleanStr = trimmed.lower()
-    puncTags = list(string.punctuation)
-    for tag in puncTags:
-        cleanStr = cleanStr.replace(tag,'')
+
+def selective_token_cleanup(strValue,cleanup_list,strict_word=False):
+    for tag in cleanup_list:
+        if tag in strValue:
+            if strict_word:
+                strValue = strValue.replace(' '+tag+' ',' ')
+            else:
+                strValue = re.sub(' ('+tag+')|('+tag+') ',' ',strValue)
+    trimmed = strValue.strip()
+    return trimmed
+
+def remove_ampersand(strValue):
+    strValue = strValue.replace('mampe','me')
+    strValue = strValue.replace('rampd','rd')
+    strValue = strValue.replace('oampg','og')
+    strValue = strValue = re.sub(' (amp)|(amp) ',' and ',strValue)
+    trimmed = strValue.strip()
+    return trimmed
+
+def remove_stopwords(strValue,strict_word=True):
+    wordlist = stopwords.words('english')
+    cleanStr = selective_token_cleanup(strValue,wordlist,strict_word=strict_word)
     return cleanStr
 
-def load_jobs(df=None):
-    global jobs
-    if df is None:
-        jobs['data'] = pd.read_csv(jobs['filename'])
-    else:
-        jobs['data'] = df
+def cleanup(strValue):
+    # keep only alphabet characters
+    letterStr = re.sub('[^a-zA-Z ]+','',strValue)
+    # lower case only
+    lowerStr = letterStr.lower()
+    # remove ampersand &
+    noamp = remove_ampersand(lowerStr)
+    # remove extra spaces on ends (not inbetween)
+    trimmed = noamp.strip()
+    return trimmed
 
-#load tags from dataframe
-def load_tags(df):
-    global tags, score_key, generic_titles, modifiers, fields, locations, ranks, tagLists
-    tags = df.copy()
-    for tt in tagLists:
-        tagLists[tt] = tags[tags['tag_type'] == tt]['tag'].tolist()
-        tag_scores = {}
-        for tg in tagLists[tt]:
-            scoreStr = tags[(tags['tag_type'] == tt) & (tags['tag'] == tg)]['score'].iloc[0]
-            if scoreStr is not None:
-                tag_scores[tg] = int(scoreStr)
-            else:
-                tag_scores[tg] = scoreStr
-        score_key[tt] = tag_scores.copy()
+def remove_junk(strValue):
+    cleanStr = cleanup(strValue)
+    nostop = remove_stopwords(cleanStr)
+    junkwords = tag_tbls['junk']['data']['tag'].values
+    cleanStr = selective_token_cleanup(nostop,junkwords)
+    trimmed = cleanStr.strip()
+    return trimmed
 
-    generic_titles = tagLists['generic']
-    modifiers = tagLists['modifier']
-    fields = tagLists['field']
-    locations = tagLists['location']
-    ranks = tagLists['rank']
+def derank(strValue):
+    rankwords = tag_tbls['rank']['data']['tag'].values
+    cleanStr = selective_token_cleanup(strValue,rankwords)
+    trimmed = cleanStr.strip()
+    return trimmed
 
-def cleanup_job_titles():
-    global jobs
-    titledata = pd.DataFrame({'clean_title': jobs['data'].apply(
-        lambda x: cleanup(x['position_title']), axis=1),
-        'jobid':jobs['data']['jobid'],
-        'posted_date':jobs['data']['posted_date'],
-        'salaryHigh':jobs['data']['salaryHigh']})
-    jobs['titles'] = titledata
+def add_clean_deranked_titles(profiles):
+    #01 clean-up, dejunk title
+    profiles['clean_title'] = profiles['position_title'].apply(lambda x:remove_junk(x))
+    #02 derank title
+    profiles['deranked_title'] = profiles['clean_title'].apply(lambda x:derank(x))
+    return profiles
 
-#03 extract and classify tags from title
+def get_bigram_matrix(titles):
+    vect = CountVectorizer(min_df=5, ngram_range=(2, 2), analyzer='word').fit(titles)
+    feature_names = np.array(vect.get_feature_names())
+    X_v = vect.transform(titles)
+    return (feature_names, X_v)
 
-def extractTags(rawStr,tagList,tagsAsHash=True):
-    extracted = [x.strip() for x in tagList if x in rawStr]
-    residual = rawStr
-    if len(extracted)>0:
-        for tag in extracted:
-            residual = residual.replace(tag,'')
-    if tagsAsHash:
-        hashStr = ':'.join(extracted)
-        return residual, hashStr
-    else:
-        return residual, extracted
+def get_new_bigrams(profiles,export=False):
+    #01 clean-up, dejunk, derank title
+    profiles = add_clean_deranked_titles(profiles)
+    #03 get bigram matrix using CountVectorizer (sklearn)
+    feature_names, X_v = get_bigram_matrix(profiles.deranked_title)
+    #05 create the bigram table
+    feature_counts = [np.sum(X_v[:, x]) / len(profiles) for x in range(len(feature_names))]
+    bigrams = pd.DataFrame({'tag': feature_names, 'count': feature_counts})
+    bigrams.sort_values('count', ascending=False, inplace=True)
+    if export:
+        bigrams.to_csv('bigrams.csv',index=False)
+    return bigrams
 
-def extract_tags_from_title(titleStr):
-    residual = titleStr
-    tagHashes = []
-    for tagList in [generic_titles, modifiers, fields, locations, ranks]:
-        residual, tagHash = extractTags(residual,tagList)
-        tagHashes.append(tagHash.strip())
-    return residual, tagHashes
 
-def classify_title(titleStr):
-    residual, tagHashes = extract_tags_from_title(titleStr)
-    generic = tagHashes[0]; modify = tagHashes[1]; field = tagHashes[2]
-    location = tagHashes[3] ; rank = tagHashes[4]
-    match_score = score_title(dict(zip(['generic','modifier','field','location','rank'],tagHashes)))
-    return match_score, residual.strip(), generic, modify, field, location, rank
 
-def score_title(tagHashes):
-    'apply score from the list of tags using the score key'
-    global score_key
-    def hash_scores(tag_type,tagHash):
-        tags = tagHash.split(':')
-        tag_scores = [None if tg == '' else score_key[tag_type][tg] for tg in tags]
-        return tag_scores
+# ----------------------------------------------------
+# ***
+# ----------------------------------------------------
 
-    scores = [s for tt in tagHashes for s in hash_scores(tt,tagHashes[tt])]
-    match_score = None
-    if -1 in scores:
-        match_score = -1
-    else:
-        match_score = sum([0 if x is None else x for x in scores])
 
-    return match_score
-
-def extract_classify_titles():
-    global jobs
-    titledata = jobs['titles']
-    titledata['match_auto'], \
-    titledata['residual'], titledata['generic'], titledata['modifier'], \
-        titledata['field'], titledata['location'], titledata['rank']= \
-        zip(*titledata['clean_title'].map(classify_title))
-    jobs['titles'] = titledata.copy()
-
-def run_jobtitle_report():
-    cleanup_job_titles()
-    extract_classify_titles()
-    jobs['titles'].to_csv(jobs['titles_filename'])

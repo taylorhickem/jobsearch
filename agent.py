@@ -2,6 +2,7 @@ from selenium import webdriver
 import bs4
 import pandas as pd
 import re
+import timeit
 import numpy as np
 
 import os
@@ -237,7 +238,7 @@ class JobSearchWebsite(object):
         return jobRecord
 
     def jobRecords_query(self,salary, search):
-        cardcount = 1; page = 0
+        cardcount = 1; page = 0 ; jobs = None
         while cardcount > 0:
             qryURL = self.jobsearch_URLquery(salary, search, page)
             self.refresh_pageSoup(qryURL)
@@ -258,25 +259,22 @@ class JobSearchWebsite(object):
         return jobs
 
     def update_jobRecords(self):
-        qrycount=0
+        qrycount=0 ; jobset = []
         for salary in self.salaryLevels:
             for search in self.categories:
-                if qrycount == 0:
-                    jobs = self.jobRecords_query(salary, search)
-                else:
-                    morejobs = self.jobRecords_query(salary, search)
-                    jobs = jobs.append(morejobs)
-                qrycount = qrycount +1
-
+                qryjobs = self.jobRecords_query(salary, search)
+                jobset.append(qryjobs)
+        jobs = pd.concat(jobset)
         #post new jobs to csv file
-        jobs.to_csv(self.jobs['filename'],index=False)
+        if not jobs is None:
+            jobs.to_csv(self.jobs['filename'],index=False)
 
-        #update database with new jobs
-        if self.jobs['records'] is None:
-            self.jobs['records'] = jobs
-        else:
-            self.jobs['records'] = self.jobs['records'].append(jobs)
-            self.jobs['records'].drop_duplicates(subset=['jobid'],inplace=True)
-            self.jobs['records'].reset_index(inplace=True)
-            del self.jobs['records']['index']
-        database.add_jobs(self.jobs['records'],append=False)
+            #update database with new jobs
+            if self.jobs['records'] is None:
+                self.jobs['records'] = jobs
+            else:
+                self.jobs['records'] = self.jobs['records'].append(jobs)
+                self.jobs['records'].drop_duplicates(subset=['jobid'],inplace=True)
+                self.jobs['records'].reset_index(inplace=True)
+                del self.jobs['records']['index']
+            database.add_jobs(self.jobs['records'],append=False)
