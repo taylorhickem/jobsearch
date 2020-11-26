@@ -96,7 +96,6 @@ def get_search_config():
     cfg['search']['keywords'] = cfg['search']['keywords'].split(', ')
     #match score min as float
     cfg['match']['match_score_min'] = float(cfg['match']['match_score_min'])
-    #hello world
     return cfg
 
 def load_inspector():
