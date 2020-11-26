@@ -18,6 +18,7 @@ import match
 jobsite = None
 qryResult = None
 DATE_FORMAT = '%Y-%m-%d'
+SEARCH_CONFIG = {}
 
 def load(db_only=False):
     global jobsite
@@ -25,6 +26,9 @@ def load(db_only=False):
         if jobsite is None:
             jobsite = agent.JobSearchWebsite()
     db.load()
+
+def load_config():
+    SEARCH_CONFIG = db.CONFIG_FILES['search']['data']
 
 # 01.01 run one qry
 def run_searchQry(salaryLevel,category):
@@ -59,13 +63,11 @@ def run_screening_report():
 
 # 01.04 run job records report
 def update_jobRecords():
-    categories = ['Consulting','Engineering','Professional Services',
-                  'Science','Environment','Information Technology','Manufacturing']
-    #categories = ['Consulting','Engineering','Design','Sciences / Laboratory / R&D','Education and Training','Manufacturing',
-    #              'Information Technology','Healthcare / Pharmaceutical', 'Logistics / Supply Chain',
-    #              'Risk Management','Others']
-    salaryLevels = [6000]
-    jobsite.set_report_parameters(salaryLevels,categories)
+    keywords = SEARCH_CONFIG['search']['keywords']
+    #focus = ['Consulting','Engineering','Professional Services',
+    #              'Science','Environment','Information Technology','Manufacturing']
+    salary_min = SEARCH_CONFIG['search']['salary_min']
+    jobsite.set_report_parameters([salary_min],keywords)
     jobsite.update_jobRecords()
     nowtimeStr = dt.datetime.strftime(dt.datetime.now(), '%Y-%m-%d %H:%M:%S')
     print('report created at %s' % nowtimeStr)
