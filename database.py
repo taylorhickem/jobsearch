@@ -17,28 +17,6 @@ CONFIG_FILES = {'search':{'filename':'search_config.json',
 NUMERIC_TYPES = ['int','float']
 SQL_DB_NAME = 'sqlite:///jobs.db'
 GSHEET_CONFIG = {}
-#GSHEET_CONFIG = {'wkbid':'1JiB-ofvyimIOZ9vVxF22xIyXybIP5FCyo6N_x-pvmCs',
-#                 'openings':{'data':'openings!A2:H',
-#                             'header':'openings!A1:H1'},
-#                 'screened':{'data':'screened!A2:M',
-#                             'header':'screened!A1:M1'},
-#                 'title_tags':{'data':'title_tags!A2:D',
-#                               'header':'title_tags!A1:D1',
-#                               'data_types':{'tag':'str',
-#                                             'industry':'str',
-#                                            'count':'float',
-#                                            'score':'int'}},
-#                'junk_tags':{'data':'junk_tags!A2:A',
-#                              'header':'junk_tags!A1'},
-#                 'rank_tags':{'data':'rank_tags!A2:B',
-#                              'header':'rank_tags!A1:B1',
-#                              'data_types': {'tag': 'str',
-#                                             'weight_score': 'float'}},
-#                'industries': {'data': 'industries!A2:B',
-#                              'header': 'industries!A1:B1',
-#                              'data_types': {'industry_classification': 'str',
-#                                              'match': 'int'}},
-#                 }
 
 table_names = []
 
