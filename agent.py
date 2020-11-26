@@ -249,10 +249,17 @@ class JobSearchWebsite(object):
             cardcount = len(cards)
             if cardcount > 0:
                 # create DataFrame object from card objects
+                rcds = []
+                for x in cards:
+                    try:
+                        rcd = self.get_jobRecord_fromcard(x)
+                        rcds.append(rcd)
+                    except:
+                        print('error encountered for card %s on page %d' % ( x['id'],page))
+                morejobs = pd.DataFrame.from_records(rcds)
                 if page == 0:
-                    jobs = pd.DataFrame.from_records([self.get_jobRecord_fromcard(x) for x in cards])
+                    jobs = morejobs
                 else:
-                    morejobs = pd.DataFrame.from_records([self.get_jobRecord_fromcard(x) for x in cards])
                     jobs = jobs.append(morejobs)
             page = page + 1
 
