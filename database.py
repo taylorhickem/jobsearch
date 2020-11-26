@@ -4,34 +4,41 @@ import pandas as pd
 import agent
 import sqlite3
 import gsheet.api as gs
+import json
 
 engine = None
 inspector = None
 gs_engine = None
+CONFIG_FILES = {'search':{'filename':'search_config.json',
+                          'data':None},
+                'gsheet':{'filename':'gsheet_config.json',
+                          'data':None},
+                }
 NUMERIC_TYPES = ['int','float']
 SQL_DB_NAME = 'sqlite:///jobs.db'
-GSHEET_CONFIG = {'wkbid':'1JiB-ofvyimIOZ9vVxF22xIyXybIP5FCyo6N_x-pvmCs',
-                 'openings':{'data':'openings!A2:H',
-                             'header':'openings!A1:H1'},
-                 'screened':{'data':'screened!A2:M',
-                             'header':'screened!A1:M1'},
-                 'title_tags':{'data':'title_tags!A2:D',
-                               'header':'title_tags!A1:D1',
-                               'data_types':{'tag':'str',
-                                             'industry':'str',
-                                             'count':'float',
-                                             'score':'int'}},
-                 'junk_tags':{'data':'junk_tags!A2:A',
-                              'header':'junk_tags!A1'},
-                 'rank_tags':{'data':'rank_tags!A2:B',
-                              'header':'rank_tags!A1:B1',
-                              'data_types': {'tag': 'str',
-                                             'weight_score': 'float'}},
-                 'industries': {'data': 'industries!A2:B',
-                               'header': 'industries!A1:B1',
-                               'data_types': {'industry_classification': 'str',
-                                              'match': 'int'}},
-                 }
+GSHEET_CONFIG = {}
+#GSHEET_CONFIG = {'wkbid':'1JiB-ofvyimIOZ9vVxF22xIyXybIP5FCyo6N_x-pvmCs',
+#                 'openings':{'data':'openings!A2:H',
+#                             'header':'openings!A1:H1'},
+#                 'screened':{'data':'screened!A2:M',
+#                             'header':'screened!A1:M1'},
+#                 'title_tags':{'data':'title_tags!A2:D',
+#                               'header':'title_tags!A1:D1',
+#                               'data_types':{'tag':'str',
+#                                             'industry':'str',
+#                                            'count':'float',
+#                                            'score':'int'}},
+#                'junk_tags':{'data':'junk_tags!A2:A',
+#                              'header':'junk_tags!A1'},
+#                 'rank_tags':{'data':'rank_tags!A2:B',
+#                              'header':'rank_tags!A1:B1',
+#                              'data_types': {'tag': 'str',
+#                                             'weight_score': 'float'}},
+#                'industries': {'data': 'industries!A2:B',
+#                              'header': 'industries!A1:B1',
+#                              'data_types': {'industry_classification': 'str',
+#                                              'match': 'int'}},
+#                 }
 
 table_names = []
 
@@ -43,12 +50,19 @@ sources = [
 
 def load(loadsheet=True):
     global engine, SQL_DB_NAME, table_names
+    load_config()
     if engine is None:
         engine = create_engine(SQL_DB_NAME, echo=False)
         load_inspector()
 
     if loadsheet:
         load_gsheet()
+
+def load_config():
+    for f in CONFIG_FILES:
+        with open(CONFIG_FILES[f]['filename']) as config_file:
+            CONFIG_FILES[f]['data'] = json.load(config_file)
+    GSHEET_CONFIG = CONFIG_FILES['gsheet']
 
 def load_inspector():
     global inspector, table_names

@@ -167,8 +167,6 @@ def get_new_bigrams(profiles,export=False):
         bigrams.to_csv('bigrams.csv',index=False)
     return bigrams
 
-
-
 # ----------------------------------------------------
 # ***
 # ----------------------------------------------------

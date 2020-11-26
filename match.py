@@ -17,6 +17,7 @@ profiles = None
 matches = None
 screened = None
 
+SEARCH_CONFIG = {}
 FILTER_SETTINGS = {
     'age_weeks':3,
 }
@@ -28,6 +29,9 @@ FILTER_SETTINGS = {
 def load():
     db.load()
     tx.load()
+
+def load_config():
+    SEARCH_CONFIG = db.CONFIG_FILES['search']['data']
 
 def load_job_profiles():
     'load job profiles from sql, append fields from job card and group by industry'
@@ -149,13 +153,14 @@ def update_screened():
     '''
     global titles, jobs, screened
     weeks = FILTER_SETTINGS['age_weeks']
+    match_score_min = SEARCH_CONFIG['match']['match_score_min']
     fields = ['match_auto','clean_title','company_name','salaryHigh','week',
               'posted_date','closing_date','years_experience','applicants','position_title','urlid','jobid']
     screened = profiles.reset_index()[[x for x in fields if not x=='week']]
     screened.fillna(0,inplace=True)
     screened = add_weeks(screened)
     recent = screened[screened['week'] <= weeks]
-    keep = recent[recent.match_auto != -1]
+    keep = recent[recent.match_auto >= match_score_min]
     screened = keep[fields].sort_values(['week', 'match_auto'], ascending=(True, False))
     #post to gsheet
     db.post_to_gsheet(screened,'screened')
