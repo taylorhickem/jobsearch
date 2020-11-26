@@ -50,19 +50,53 @@ sources = [
 
 def load(loadsheet=True):
     global engine, SQL_DB_NAME, table_names
-    load_config()
+    load_config_files()
     if engine is None:
         engine = create_engine(SQL_DB_NAME, echo=False)
         load_inspector()
 
     if loadsheet:
         load_gsheet()
+        update_config()
 
-def load_config():
+def load_config_files():
+    global GSHEET_CONFIG
     for f in CONFIG_FILES:
         with open(CONFIG_FILES[f]['filename']) as config_file:
             CONFIG_FILES[f]['data'] = json.load(config_file)
-    GSHEET_CONFIG = CONFIG_FILES['gsheet']
+    GSHEET_CONFIG = CONFIG_FILES['gsheet']['data'].copy()
+
+def update_config():
+    #search config
+    cfg = get_search_config()
+    with open(CONFIG_FILES['search']['filename'], 'w') as f:
+        json.dump(cfg, f)
+
+    load_config_files()
+
+def get_search_config():
+    'update search config settings from gsheet'
+    cfg = {
+        'search':{
+            'salary_min':None,
+            'keywords':None
+        },
+        'match':{
+          'match_score_min':None
+        }
+    }
+    params = get_sheet('config')
+    for grp in cfg:
+        for p in cfg[grp]:
+            cfg[grp][p] = params[(params['group']==grp) & (params['parameter']==p)]['value'].iloc[0]
+    #convert data types
+    #salary int
+    cfg['search']['salary_min'] = int(cfg['search']['salary_min'])
+    #keywords as comma delimited list
+    cfg['search']['keywords'] = cfg['search']['keywords'].split(', ')
+    #match score min as float
+    cfg['match']['match_score_min'] = float(cfg['match']['match_score_min'])
+    return cfg
 
 def load_inspector():
     global inspector, table_names

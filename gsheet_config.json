@@ -37,5 +37,9 @@
       "industry_classification":"str",
       "match":"int"
     }
+  },
+  "config": {
+    "data":"config!A2:C",
+    "header":"config!A1:C1"
   }
 }

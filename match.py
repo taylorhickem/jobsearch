@@ -29,8 +29,10 @@ FILTER_SETTINGS = {
 def load():
     db.load()
     tx.load()
+    load_config()
 
 def load_config():
+    global SEARCH_CONFIG
     SEARCH_CONFIG = db.CONFIG_FILES['search']['data']
 
 def load_job_profiles():
