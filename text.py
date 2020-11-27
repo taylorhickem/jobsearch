@@ -104,9 +104,9 @@ def selective_token_cleanup(strValue,cleanup_list,strict_word=False):
     return trimmed
 
 def remove_ampersand(strValue):
-    strValue = strValue.replace('mampe','me')
-    strValue = strValue.replace('rampd','rd')
-    strValue = strValue.replace('oampg','og')
+    strValue = strValue.replace('mampe','me') #mechanical and electrical
+    strValue = strValue.replace('rampd','rd') #research and development
+    strValue = strValue.replace('oampg','og') #oil and gas
     strValue = strValue = re.sub(' (amp)|(amp) ',' and ',strValue)
     trimmed = strValue.strip()
     return trimmed

@@ -18,9 +18,6 @@ matches = None
 screened = None
 
 SEARCH_CONFIG = {}
-FILTER_SETTINGS = {
-    'age_weeks':3,
-}
 
 #----------------------------------------------------
 #Setup, initialization
@@ -154,7 +151,7 @@ def update_screened():
     ''' drops the rejected positions and filters for recent based on posted_date
     '''
     global titles, jobs, screened
-    weeks = FILTER_SETTINGS['age_weeks']
+    weeks = SEARCH_CONFIG['match']['age_weeks']
     match_score_min = SEARCH_CONFIG['match']['match_score_min']
     fields = ['match_auto','clean_title','company_name','salaryHigh','week',
               'posted_date','closing_date','years_experience','applicants','position_title','urlid','jobid']
