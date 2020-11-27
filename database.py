@@ -60,7 +60,8 @@ def get_search_config():
             'keywords':None
         },
         'match':{
-          'match_score_min':None
+          'match_score_min':None,
+          'age_weeks':None
         }
     }
     params = get_sheet('config')
@@ -74,7 +75,8 @@ def get_search_config():
     cfg['search']['keywords'] = cfg['search']['keywords'].split(', ')
     #match score min as float
     cfg['match']['match_score_min'] = float(cfg['match']['match_score_min'])
-    #change to new user#
+    #change age weeks max to int
+    cfg['match']['age_weeks'] = int(cfg['match']['age_weeks'])
     return cfg
 
 def load_inspector():
