@@ -1,10 +1,10 @@
+import json
+import pandas as pd
 from sqlalchemy import create_engine
 from sqlalchemy.engine.reflection import Inspector
-import pandas as pd
-import agent
-import sqlite3
 import gsheet.api as gs
-import json
+
+import agent
 
 engine = None
 inspector = None

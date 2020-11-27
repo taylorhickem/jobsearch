@@ -1,14 +1,10 @@
-#import nltk
-import ssl
 import re
-from nltk.corpus import stopwords
-import string
-import pandas as pd
 import numpy as np
-import database as db
-
-from sklearn.linear_model import LogisticRegression
+import pandas as pd
+from nltk.corpus import stopwords
 from sklearn.feature_extraction.text import CountVectorizer
+
+import database as db
 
 #----------------------------------------------------
 #Static variables

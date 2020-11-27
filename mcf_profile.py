@@ -1,12 +1,10 @@
-from agent import JobSearchWebsite
-import sys
 import time
 import datetime as dt
-import bs4
-import re
 import pandas as pd
+import bs4
+
 import database as db
-import text
+from agent import JobSearchWebsite
 
 jobsite = None
 profiles = None

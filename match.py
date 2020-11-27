@@ -66,17 +66,24 @@ def load_job_profiles():
 #----------------------------------------------------
 
 def screen_jobs():
-    ''' screens jobs based on matching keyword tags.
-    The process is divided into two general steps - scoring and filtering and 5 sub-processes
-    - cleanup title and extract tags, score the clean title from extracted tags.
-    The screened table drops the reject scores and filters for current applications based on posted_date.
-    The inputs are the job and tag tables and there are two outputs
-    - an updated sqlite table ‘match’ and the screened jobs posted to gsheet.'''
+    ''' Screens jobs based on qualification match by keyword tags
+    and job post age (in weeks) The inputs are the job and tag tables
+     and there are two outputs - an updated sqlite table ‘match’
+     and the screened jobs posted to gsheet.
+
+     The process is divided into two general steps - scoring and filtering.
+     Scoring cleans up and deranks the title and extract bigram tags,
+     calculates match_auto from the clean,deranked title from the
+     extracted tags and the role rank : salary_pct.
+
+     The screened table filters based on the match score and
+      current applications based on number of weeks from today to
+      the posted_date.'''
 
     #01 cleanup title, extract tags, score title
     #02 store the match_auto score in the sqlite match table
     update_matches()
-    #03 drop the relected positions, filter for most recent posts <=3 weeks
+    #03 drop the jobs below min match score, filter for most recent posts
     #04 push update to gsheet
     update_screened()
 
@@ -95,9 +102,9 @@ def update_matches():
     '''updates the match table from the titles table by dropping fields
     '''
     global titles, matches
-    score_positions()
     #fields to keep : jobid, clean_title, match_auto
     fields = ['jobid','clean_title','match_auto']
+    score_positions()
     matches = profiles.reset_index()[fields].copy()
     db.update_match(matches)
 
@@ -166,7 +173,7 @@ def update_screened():
 
 def add_weeks(df):
     df['date'] = df.apply(lambda x: dt.datetime.strptime(
-        x.posted_date, '%Y-%m-%d').date(),axis=1)
+        x.posted_date, report.DATE_FORMAT).date(),axis=1)
     del df['posted_date']
     df.rename(columns={'date': 'posted_date'}, inplace=True)
     df['monday'] = report.get_mondays(df['posted_date'])
@@ -187,8 +194,7 @@ def update_tags():
     #02 get new bigrams from job profiles
     tx.push_tag_gsheets_to_sql(skip=['title'])
     bigrams = tx.get_new_bigrams(profiles,export=True)
-    #03 merge new bigrams and update ghseet and sql
-    #.....
+    #review the csv file
 
 def get_ics(list_type='keep'):
     ic = tx.tag_sheets['ic']['data']
