@@ -160,8 +160,12 @@ def update_screened():
     global titles, jobs, screened
     weeks = SEARCH_CONFIG['match']['age_weeks']
     match_score_min = SEARCH_CONFIG['match']['match_score_min']
-    fields = ['match_auto','clean_title','company_name','salaryHigh','week',
-              'posted_date','closing_date','years_experience','applicants','position_title','urlid','jobid']
+    fields = ['match_auto','week','clean_title','company_name','jobid','url','salaryHigh','salary_pct',
+              'years_experience','applicants','posted_date','closing_date','deranked_title',
+              'position_title','description']
+
+#    fields = ['match_auto','clean_title','company_name','salaryHigh','week',
+#              'posted_date','closing_date','years_experience','applicants','position_title','urlid','jobid']
     screened = profiles.reset_index()[[x for x in fields if not x=='week']]
     screened.fillna(0,inplace=True)
     screened = add_weeks(screened)

@@ -160,9 +160,6 @@ def post_to_gsheet(df,rng_code):
     #write values - this method writes everything as a string
     gs_engine.set_rangevalues(wkbid,rngid,values)
 
-def post_jobs_to_gsheet(df):
-    post_to_gsheet(df,'openings')
-
 #----------------------------------------------------------------------------------------
 #Work in progress
 #----------------------------------------------------------------------------------------
