@@ -95,10 +95,6 @@ def update_jobs_report(from_file=False):
         e_sec = elapsed-e_min*60
     print('added %d new jobs in %d min :%d sec' % (new_jobs,e_min,e_sec))
 
-    #02 post the results to the google spreadsheet
-    db.post_jobs_to_gsheet(jobs)
-    print('jobs report updated.')
-
 def screen_jobs():
     match.load()
     match.screen_jobs()
