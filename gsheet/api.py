@@ -52,10 +52,10 @@ class SheetsEngine():
             spreadsheetId=spreadsheetId, range=rangeName).execute()
         return result.get('values', [])
 
-    def set_rangevalues(self,spreadsheetId,rangeName,values):
+    def set_rangevalues(self,spreadsheetId,rangeName,values,input_option='RAW'):
         body = {'range':rangeName,'values':values}
         self.service.spreadsheets().values().update(
-            spreadsheetId=spreadsheetId, valueInputOption= 'RAW', range=rangeName,body=body).execute()
+            spreadsheetId=spreadsheetId, valueInputOption= input_option, range=rangeName,body=body).execute()
 
     def clear_rangevalues(self,spreadsheetId,rangeName):
         self.service.spreadsheets().values().clear(

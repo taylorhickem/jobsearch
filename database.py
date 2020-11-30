@@ -151,14 +151,14 @@ def load_gsheet():
     if gs_engine is None:
         gs_engine = gs.SheetsEngine()
 
-def post_to_gsheet(df,rng_code):
+def post_to_gsheet(df,rng_code,input_option='RAW'):
     #values is a 2D list [[]]
     wkbid = GSHEET_CONFIG['wkbid']
     rngid = GSHEET_CONFIG[rng_code]['data']
     values = df.values.astype('str').tolist()
     gs_engine.clear_rangevalues(wkbid,rngid)
     #write values - this method writes everything as a string
-    gs_engine.set_rangevalues(wkbid,rngid,values)
+    gs_engine.set_rangevalues(wkbid,rngid,values,input_option)
 
 #----------------------------------------------------------------------------------------
 #Work in progress
