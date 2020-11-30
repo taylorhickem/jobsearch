@@ -2,6 +2,7 @@
 #Module dependencies
 #----------------------------------------------------
 import pandas as pd
+import numpy as np
 import datetime as dt
 
 import database as db
@@ -164,8 +165,6 @@ def update_screened():
               'years_experience','applicants','posted_date','closing_date','deranked_title',
               'position_title','description']
 
-#    fields = ['match_auto','clean_title','company_name','salaryHigh','week',
-#              'posted_date','closing_date','years_experience','applicants','position_title','urlid','jobid']
     screened = profiles.reset_index()[[x for x in fields if not x=='week']]
     screened.fillna(0,inplace=True)
     screened = add_weeks(screened)
@@ -196,9 +195,35 @@ def update_tags():
     #01 load job profiles from sql
     load_job_profiles()
     #02 get new bigrams from job profiles
-    tx.push_tag_gsheets_to_sql(skip=['title'])
-    bigrams = tx.get_new_bigrams(profiles,export=True)
-    #review the csv file
+    tx.push_tag_gsheets_to_sql()
+    bigrams = tx.get_new_bigrams(profiles,export=True).set_index('tag')
+    #03 compare to current tag library and break into new and current
+    if len(bigrams)>0:
+        lib = tx.tag_tbls['title']['data'].set_index('tag').copy()
+        current_tags = list(set(bigrams.index).intersection(set(lib.index)))
+        new_tags = list(set(bigrams.index).difference(set(lib.index)))
+        #04 update current with new counts
+        if len(current_tags) > 0:
+            #current_bg = lib.loc[current_tags]
+            lib.update(bigrams.loc[current_tags])
+        if len(new_tags)>0:
+            new_bg = bigrams.loc[new_tags]
+        #05 append new bigram tags to current library
+        scenario = 2*int(len(current_tags) > 0) + int(len(new_tags)>0)
+        if scenario == 3:   # current + new (append)
+            title = pd.concat([lib,new_bg])
+        elif scenario == 2: # current only (title = current)
+            title = lib
+        else:               # new only (title = new)
+            title = new_bg
+            title['industry'] = np.nan
+            title['score'] = np.nan
+        #06 sort table by industry and score
+        title.reset_index(inplace=True)
+        title.sort_values(['industry', 'count'], ascending=[True,False], inplace=True)
+        #07 push updates to sql and gsheet
+        rng_code = tx.tag_sheets['title']['name']
+        db.post_to_gsheet(title,rng_code,input_option='USER_ENTERED')
 
 def get_ics(list_type='keep'):
     ic = tx.tag_sheets['ic']['data']
