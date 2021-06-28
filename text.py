@@ -35,6 +35,8 @@ def load_tags_gsheet():
     junk_tags = db.get_sheet('junk_tags')
     keep_tags = db.get_sheet('keep_tags')
     rank_tags = db.get_sheet('rank_tags')
+    keyword_tags = db.get_sheet('keyword_tags')
+    cv = db.get_sheet('cv')
     industries = db.get_sheet('industries')
     tag_sheets = {'title':{'data':title_tags,
                            'name':'title_tags'},
@@ -44,6 +46,10 @@ def load_tags_gsheet():
                           'name':'keep_tags'},
                   'junk':{'data':junk_tags,
                           'name':'junk_tags'},
+                  'kw_profile':{'data':keyword_tags,
+                          'name':'keyword_tags'},
+                  'kw_cv':{'data':cv,
+                          'name':'cv'},
                   'ic': {'data':industries,
                          'name':'industries'}
                   }
@@ -54,6 +60,8 @@ def load_tags_sql():
     junk_tbl = db.get_table('junk_tag')
     keep_tbl = db.get_table('keep_tag')
     rank_tbl = db.get_table('rank_tag')
+    kw_profile_tbl = db.get_table('kw_profile')
+    kw_cv_tbl = db.get_table('kw_cv')
     ic_tbl = db.get_table('industry_classification')
     tag_tbls = {'title':{'data':title_tbl,
                          'name':'title_tag'},
@@ -63,6 +71,10 @@ def load_tags_sql():
                         'name':'keep_tag'},
                 'junk':{'data':junk_tbl,
                         'name':'junk_tag'},
+                'kw_profile':{'data':kw_profile_tbl,
+                        'name':'kw_profile'},
+                'kw_cv':{'data':kw_cv_tbl,
+                        'name':'kw_cv'},
                 'ic': {'data':ic_tbl,
                        'name':'industry_classification'}
                 }

@@ -1,5 +1,6 @@
 import json
 import pandas as pd
+import datetime as dt
 from sqlalchemy import create_engine
 from sqlalchemy.engine.reflection import Inspector
 import gsheet.api as gs
@@ -43,6 +44,7 @@ def load_config_files():
         with open(CONFIG_FILES[f]['filename']) as config_file:
             CONFIG_FILES[f]['data'] = json.load(config_file)
     GSHEET_CONFIG = CONFIG_FILES['gsheet']['data'].copy()
+
 
 def update_config():
     #search config
@@ -178,9 +180,16 @@ def get_sheet(rng_code):
             if not typeId in ['str','date']:
                 if typeId in NUMERIC_TYPES:
                     #to deal with conversion from '' to nan
-                    rng[field] = pd.to_numeric(rng[field]).astype(typeId)
+                    if typeId in ['float']: #nan compatible
+                        rng[field] = pd.to_numeric(rng[field]).astype(typeId)
+                    else: #nan incompatible types
+                        rng[field] = pd.to_numeric(rng[field]).fillna(0).astype(typeId)
                 else:
                     rng[field] = rng[field].astype(typeId)
+            if typeId == 'date':
+                if 'date_format' in rng_config:
+                    rng[field] = rng[field].apply(
+                        lambda x:dt.datetime.strptime(x,rng_config['date_format']))
     return rng
 
 def get_tags():
