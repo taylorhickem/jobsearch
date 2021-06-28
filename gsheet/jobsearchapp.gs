@@ -1,3 +1,4 @@
+// project: jobsearchApp
 var ss = SpreadsheetApp.getActiveSpreadsheet();
 var eval_sht = ss.getSheetByName("evaluated");
 var form_sht = ss.getSheetByName("eval_form");
@@ -24,10 +25,10 @@ function drawJobs() {
   var match_jidRng = ss.getRangeByName("match_jobid_hdr").offset(1,0,Njobs_max,1);
   // 2) get list of jobids from 'evaluated'
   var Neval = eval_sht.getLastRow()-1;
-  var eval = ss.getRangeByName("evaluated_jobid_hdr").offset(1,0,Neval,1).getValues();
+  var eval = getColumn(ss.getRangeByName("evaluated_jobid_hdr").offset(1,0,Neval,1).getValues(),0);
   // 3) get list of jobids from 'screened'
   var Nscreened = screened_sht.getLastRow()-1;
-  var screened = ss.getRangeByName("screened_jobid_hdr").offset(1,0,Nscreened,1).getValues();
+  var screened = getColumn(ss.getRangeByName("screened_jobid_hdr").offset(1,0,Nscreened,1).getValues(),0);
   // 4) in order, loop through the screened jobids, skipping those
   //  which are in 'evaluated'.
   var Nuneval_max = alpha*Njobs_max;
@@ -37,19 +38,19 @@ function drawJobs() {
   if (Nscreened < Nuneval){
     Nuneval = Nscreened;
   }
-  var jobid = screened[0,0];
+  var jobid = screened[0];
   for(var i=0;i<Nuneval;i++){
     // check if jobid already evaluated
-    jobid = screened[0,i];
-    if (eval[0].indexOf(jobid) == -1){
+    jobid = screened[i];
+    if (eval.indexOf(jobid) == -1){
       // if unevaluated, add to list
       uneval.push([jobid])
     }
   }
-  Nuneval = uneval.length;
 
   // 5) draw N random samples from the shortlist, if the shortlist is shorter than Njobs,
   //     then reduce Njobs to match the shortlist. If there are no jobids left then exit
+  Nuneval = uneval.length;
   if(Nuneval>0){
     var Njobs = Njobs_max;
     if(Nuneval < Njobs){
@@ -80,6 +81,7 @@ function recordEvaluation() {
   // 1) get 3 range sections - jobid, scores, keywords
   var jobid = ss.getRangeByName("form_jobid").getValues();
   var scores = ss.getRangeByName("form_scores").getValues();
+  var formal_tbl = ss.getRangeByName("form_formal").getValues();
   var keyword_tbl = ss.getRangeByName("form_keywords").getValues();
 
   // 2) get the new row range in evaluated
@@ -88,25 +90,46 @@ function recordEvaluation() {
   var evalNewRow = ss.getRangeByName("evaluated_hdr").offset(Neval+1,0,1,Meval)
 
   // 3) create the new record
-  var rcd = Array(12);
+  var rcd = Array(16);
+  var nowtime = new Date();
 
-  rcd[0] = jobid[0][0];  // 01 jobid
-  rcd[1] = jobid[1][0];  // 02 short title
-  rcd[2] = scores[0][0]; // 03 match_eval
-  rcd[3] = scores[1][0]; // 04 match_man
-  rcd[4] = scores[2][0]; // 05 match_mcf
-  rcd[5] = scores[3][0]; // 06 match_keyword
-  rcd[6] = scores[4][0]; // 07 keyword_count_match
-  rcd[7] = scores[5][0]; // 08 keyword_count_some
-  rcd[8] = scores[6][0]; // 09 keyword_count_no_match
+  rcd[0] = nowtime;      // 01 date
+  rcd[1] = jobid[0][0];  // 02 jobid
+  rcd[2] = jobid[1][0];  // 03 short title
+  rcd[3] = scores[0][0]; // 04 match_eval
+  rcd[4] = scores[1][0]; // 05 match_man
+  rcd[5] = scores[2][0]; // 06 match_mcf
+  rcd[6] = scores[3][0]; // 07 match_formal
+  rcd[7] = scores[4][0]; // 08 match_keyword
+  rcd[8] = scores[5][0]; // 09 keyword_count_match
+  rcd[9] = scores[6][0]; // 10 keyword_count_some
+  rcd[10] = scores[7][0]; // 11 keyword_count_no_match
+  rcd[11] = scores[8][0]; // 12 formal_level
+
+  // construct the formal qualification keyword strings
+  var kwFormalStr = '';
+  if (formal_tbl.length>0){
+    for(var i=0;i<keyword_tbl.length;i++){
+      if (formal_tbl[i][0]!=''){
+        if (kwFormalStr==''){
+          kwFormalStr = formal_tbl[i][0];
+        }else{
+          kwFormalStr = kwFormalStr + ', ' + formal_tbl[i][0];
+        }
+      } else {
+        break;
+      }
+    }
+  }
+  rcd[12] = kwFormalStr; // 13 keywords_formal
 
   // construct the keyword strings for match, some, and none
   var kwMatchStr = '';
   var kwSomeStr = '';
   var kwNoneStr = '';
   var score = 0;
-  if (keyword_tbl.length>1){
-    for(var i=1;i<keyword_tbl.length;i++){
+  if (keyword_tbl.length>0){
+    for(var i=0;i<keyword_tbl.length;i++){
       if (keyword_tbl[i][0]!=''){
         score = keyword_tbl[i][2];
         switch (score){
@@ -141,9 +164,9 @@ function recordEvaluation() {
       }
     }
   }
-  rcd[9] = kwMatchStr; // 10 keywords_match
-  rcd[10] = kwSomeStr; // 11 keywords_some
-  rcd[11] = kwNoneStr; // 12 keywords_no_match
+  rcd[13] = kwMatchStr; // 14 keywords_match
+  rcd[14] = kwSomeStr; // 15 keywords_some
+  rcd[15] = kwNoneStr; // 16 keywords_no_match
 
   // 4) write record into the new row
   evalNewRow.setValues([rcd]);
@@ -154,6 +177,7 @@ function recordEvaluation() {
   // 6) clear contents and reset view back to 'eval_form'
   ss.getRangeByName("form_jobid").offset(1,0,1,1).clearContent();
   ss.getRangeByName("form_keywords").clearContent();
+  ss.getRangeByName("form_formal").clearContent();
 }
 
 function updateKeywordLib() {
@@ -184,4 +208,15 @@ function updateKeywordLib() {
     var tgNewRows = ss.getRangeByName("keyword_tags_hdr").offset(Ntgs+1,0,kw_tbl_new.length,Mfld)
     tgNewRows.setValues(kw_tbl_new);
   }
+}
+
+function getColumn(array2D,col_index){
+  // selects column i and returns as a 1D array (list)
+  var array1D = Array();
+  if (array2D.length>0){
+    for(var i=0;i<array2D.length;i++){
+      array1D.push(array2D[i][col_index])
+    }
+  }
+  return array1D
 }

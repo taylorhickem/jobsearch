@@ -6,8 +6,10 @@ import timeit
 import numpy as np
 
 import os
+import sys
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import SessionNotCreatedException
 import datetime as dt
 from timeit import default_timer as timer
 import time
@@ -18,6 +20,7 @@ chrome_options.add_argument("--headless")
 #chrome_options.binary_location = '/Applications/Google Chrome
 
 files = {'job_openings':'jobopenings.csv'}
+CHROMEDRIVER_DOWNLOAD_URL = 'https://chromedriver.chromium.org/downloads'
 
 class JobSearchWebsite(object):
     report_folder = ''
@@ -71,7 +74,17 @@ class JobSearchWebsite(object):
             pass
 
     def loadDriver(self):
-        self.driver = webdriver.Chrome(executable_path=os.path.abspath('chromedriver'), options=chrome_options)
+        try:
+            self.driver = webdriver.Chrome(
+                executable_path=os.path.abspath('chromedriver'), options=chrome_options)
+        except SessionNotCreatedException as exc:
+            if 'version' in exc.msg.lower():
+                msgStr = 'download the latest chrome webdriver at \n' + CHROMEDRIVER_DOWNLOAD_URL
+                print(msgStr)
+            raise
+        except:
+            print("Unexpected error:", sys.exc_info()[0])
+            raise
 
     def set_report_parameters(self, salaryLevels, categories, employmentType='Full Time',
                               location='Singapore',
@@ -168,9 +181,9 @@ class JobSearchWebsite(object):
         # title
         def get_position_title(cardObj):
             title_keyword = 'job-title'  # unique tag identifier
-            titleHeader = [y for y in cardObj.find_all('h1') if title_keyword in str(y)][0]
-            leftbloc = 'data-cy="job-card__job-title">'
-            rightbloc = '</h1>'
+            titleHeader = [y for y in cardObj.find_all('span') if title_keyword in str(y)][0]
+            leftbloc = '>'
+            rightbloc = '</span>'
             titleStr = re.search(leftbloc + '(.*)' + rightbloc, str(titleHeader)).group(1)
             return titleStr
 
@@ -206,7 +219,7 @@ class JobSearchWebsite(object):
         def get_company_name(cardObj):
             company_keyword = 'company-hire-info__company'  # unique tag identifier
             companyP = [y for y in cardObj.find_all('p') if company_keyword in str(y)][0]
-            leftbloc = 'data-cy="company-hire-info__company">'
+            leftbloc = '>'
             rightbloc = '</p>'
             companyStr = re.search(leftbloc + '(.*)' + rightbloc, str(companyP)).group(1)
             return companyStr
@@ -270,18 +283,22 @@ class JobSearchWebsite(object):
         for salary in self.salaryLevels:
             for search in self.categories:
                 qryjobs = self.jobRecords_query(salary, search)
-                jobset.append(qryjobs)
-        jobs = pd.concat(jobset)
-        #post new jobs to csv file
-        if not jobs is None:
-            jobs.to_csv(self.jobs['filename'],index=False)
+                if not qryjobs is None:
+                    jobset.append(qryjobs)
+        if len(jobset)==0:
+            raise ValueError('query did not return any job cards')
+        else:
+            jobs = pd.concat(jobset)
+            #post new jobs to csv file
+            if not jobs is None:
+                jobs.to_csv(self.jobs['filename'],index=False)
 
-            #update database with new jobs
-            if self.jobs['records'] is None:
-                self.jobs['records'] = jobs
-            else:
-                self.jobs['records'] = self.jobs['records'].append(jobs)
-                self.jobs['records'].drop_duplicates(subset=['jobid'],inplace=True)
-                self.jobs['records'].reset_index(inplace=True)
-                del self.jobs['records']['index']
-            database.add_jobs(self.jobs['records'],append=False)
+                #update database with new jobs
+                if self.jobs['records'] is None:
+                    self.jobs['records'] = jobs
+                else:
+                    self.jobs['records'] = self.jobs['records'].append(jobs)
+                    self.jobs['records'].drop_duplicates(subset=['jobid'],inplace=True)
+                    self.jobs['records'].reset_index(inplace=True)
+                    del self.jobs['records']['index']
+                database.add_jobs(self.jobs['records'],append=False)

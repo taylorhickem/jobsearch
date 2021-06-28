@@ -181,3 +181,17 @@ def update_db(new_profiles=None):
                 profiles = new_profiles
     #push the new 'profiles' records to the sqlite database
     db.update_table(profiles,'profile',append=False)
+
+# ----------------------------------------------------
+# profile evaluation
+# ----------------------------------------------------
+
+def update_evaluations():
+    ''' updates the sql database with the evaluations from the google sheet
+    '''
+    evals = db.get_sheet('evaluate')
+    db.update_table(evals,'evaluate',append=False)
+
+# ----------------------------------------------------
+# ***
+# ----------------------------------------------------

@@ -1,5 +1,6 @@
 *.pyc
 *~
+*.lnk
 __pycache__
 env
 venv
