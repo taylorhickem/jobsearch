@@ -53,14 +53,24 @@ def load_job_profiles():
     ics = get_ics('focus')
     subsets = []
     for ic in ics:
-        subset = get_profiles_by_ic(profiles,ic)
-        subset['salary_pct'] = subset.salaryHigh.rank(pct=True)
-        subset['ic'] = ic
-        subsets.append(subset)
+        subset = get_profiles_by_ic(profiles, ic)
+        ss_wo_salary = subset[pd.isnull(subset.salaryHigh)].copy()
+        if len(ss_wo_salary) > 0:
+            ss_w_salary = subset[not pd.isnull(subset.salaryHigh)].copy()
+            if len(ss_w_salary) > 0:
+                ss_w_salary['salary_pct'] = ss_w_salary.salaryHigh.rank(pct=True)
+                ss_w_salary['ic'] = ic
+                subsets.append(ss_w_salary)
+            ss_wo_salary['ic'] = ic
+            subsets.append(ss_wo_salary)
+        else:
+            subset['salary_pct'] = subset.salaryHigh.rank(pct=True)
+            subset['ic'] = ic
+            subsets.append(subset)
 
     profiles = pd.concat(subsets)
-    profiles.drop_duplicates(subset=['jobid'],inplace=True)
-    profiles.set_index('jobid',inplace=True)
+    profiles.drop_duplicates(subset=['jobid'], inplace=True)
+    profiles.set_index('jobid', inplace=True)
 
 #----------------------------------------------------
 #Reports
@@ -81,12 +91,17 @@ def screen_jobs():
       current applications based on number of weeks from today to
       the posted_date.'''
 
-    #01 cleanup title, extract tags, score title
-    #02 store the match_auto score in the sqlite match table
+    #01 update manual evaluations
+    prf.update_evaluations()
+
+    #02 cleanup title, extract tags, score title
+    #03 store the match_auto score in the sqlite match table
     update_matches()
-    #03 drop the jobs below min match score, filter for most recent posts
-    #04 push update to gsheet
+
+    #04 drop the jobs below min match score, filter for most recent posts
+    #05 push update to gsheet
     update_screened()
+
 
 def get_match_report():
     global jobs
@@ -104,13 +119,15 @@ def update_matches():
     '''
     global titles, matches
     #fields to keep : jobid, clean_title, match_auto
-    fields = ['jobid','clean_title','match_auto']
+    fields = ['jobid', 'clean_title', 'match_auto']
     score_positions()
     matches = profiles.reset_index()[fields].copy()
     db.update_match(matches)
 
+
 def get_match_score_range():
     return profiles.match_score.unique()
+
 
 def match_selectivity(score=0):
     pvt = pd.pivot_table(profiles,index='match_score',values='urlid',aggfunc='count')
@@ -127,13 +144,17 @@ def score_positions():
     profiles['match_auto'] = profiles.apply(
         lambda x: match_score(x['salary_pct'], x['title_score']), axis=1)
 
-def match_score(pct,title_score):
-    if title_score>0:
-        quantile = 1+[pct<x for x in [0.25,0.5,0.75,1]].index(True)
+
+def match_score(pct, title_score):
+    if title_score > 0:
+        quantile = 3
+        if not pd.isnull(pct):
+            quantile = 1+[pct < x for x in [0.25, 0.5, 0.75, 1]].index(True)
         score = 1/quantile*(1+title_score)
     else:
         score = 0
     return score
+
 
 def score_profile_title():
     global profiles
@@ -161,18 +182,19 @@ def update_screened():
     global titles, jobs, screened
     weeks = SEARCH_CONFIG['match']['age_weeks']
     match_score_min = SEARCH_CONFIG['match']['match_score_min']
-    fields = ['match_auto','week','clean_title','company_name','jobid','url','salaryHigh','salary_pct',
+    fields = ['match_auto','week','clean_title','company_name', 'jobid', 'url','salaryHigh','salary_pct',
               'years_experience','applicants','posted_date','closing_date','deranked_title',
-              'position_title','description']
+              'position_title','description', 'src_methodid']
 
-    screened = profiles.reset_index()[[x for x in fields if not x=='week']]
-    screened.fillna(0,inplace=True)
+    screened = profiles.reset_index()[[x for x in fields if not x == 'week']]
+    screened.fillna(0, inplace=True)
     screened = add_weeks(screened)
     recent = screened[screened['week'] <= weeks]
-    keep = recent[recent.match_auto >= match_score_min]
+    keep = recent[(recent.match_auto >= match_score_min) | (recent.src_methodid == 1)]
     screened = keep[fields].sort_values(['week', 'match_auto'], ascending=(True, False))
     #post to gsheet
-    db.post_to_gsheet(screened,'screened')
+    db.post_to_gsheet(screened, 'screened')
+
 
 def add_weeks(df):
     df['date'] = df.apply(lambda x: dt.datetime.strptime(

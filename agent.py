@@ -145,7 +145,7 @@ class JobSearchWebsite(object):
         self.driver.get(qryURL)
         time.sleep(2)
         pageStr = self.driver.page_source
-        self.pageSoup = bs4.BeautifulSoup(pageStr,self.parserStr)
+        self.pageSoup = bs4.BeautifulSoup(pageStr, self.parserStr)
 
     def get_searchResults(self, qryURL):
         self.refresh_pageSoup(qryURL)
@@ -167,7 +167,7 @@ class JobSearchWebsite(object):
             resDict = {'query jobs': resPair[0], 'total jobs': resPair[0]}
         return resDict
 
-    def get_jobRecord_fromcard(self,cardObj):
+    def get_jobRecord_fromcard(self, cardObj):
         # salary
         def get_salaryHigh(cardObj):
             salary_divTag = 'lh-solid'  # unique tag identifier for the salary information
@@ -248,10 +248,12 @@ class JobSearchWebsite(object):
         jobRecord['urlid'] = get_urlid(cardObj)
         jobRecord['source'] = self.name
         jobRecord['jobid'] = get_jobid(jobRecord)
+        jobRecord['src_methodid'] = 0 # web scraping
         return jobRecord
 
+
     def jobRecords_query(self,salary, search):
-        cardcount = 1; page = 0 ; jobs = None
+        cardcount = 1; page = 0; jobs = None
         while cardcount > 0:
             qryURL = self.jobsearch_URLquery(salary, search, page)
             self.refresh_pageSoup(qryURL)
@@ -279,13 +281,13 @@ class JobSearchWebsite(object):
         return jobs
 
     def update_jobRecords(self):
-        qrycount=0 ; jobset = []
+        qrycount=0; jobset = []
         for salary in self.salaryLevels:
             for search in self.categories:
                 qryjobs = self.jobRecords_query(salary, search)
                 if not qryjobs is None:
                     jobset.append(qryjobs)
-        if len(jobset)==0:
+        if len(jobset) == 0:
             raise ValueError('query did not return any job cards')
         else:
             jobs = pd.concat(jobset)
@@ -298,7 +300,7 @@ class JobSearchWebsite(object):
                     self.jobs['records'] = jobs
                 else:
                     self.jobs['records'] = self.jobs['records'].append(jobs)
-                    self.jobs['records'].drop_duplicates(subset=['jobid'],inplace=True)
+                    self.jobs['records'].drop_duplicates(subset=['jobid'], inplace=True)
                     self.jobs['records'].reset_index(inplace=True)
                     del self.jobs['records']['index']
-                database.add_jobs(self.jobs['records'],append=False)
+                database.add_jobs(self.jobs['records'], append=False)
