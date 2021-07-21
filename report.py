@@ -2,8 +2,6 @@
 ###
 
 # load packages
-import mcf_profile
-import agent
 import sys
 import math
 import time
@@ -11,8 +9,12 @@ import datetime as dt
 import bs4
 import re
 import pandas as pd
+
 import database as db
+import mcf_profile
+import agent
 import match
+import post
 
 # load an instance of JobSearchWebsite --> jobsite
 jobsite = None
@@ -106,11 +108,12 @@ def screen_jobs():
     match.screen_jobs()
 
 
-def update_job_profiles(limit=200):
+def update_job_profiles(limit=200, screen=True):
     #200 records ~ 15 minute runtime
     mcf_profile.load()
     mcf_profile.update_job_profiles(limit)
-    screen_jobs()
+    if screen:
+        screen_jobs()
 
 
 def get_monday(dateValue):
@@ -156,10 +159,19 @@ def autorun():
             update_jobRecords()
         elif process_name == 'screen_jobs':
             screen_jobs()
+        elif process_name == 'update_new_posts':
+            post.load()
+            post.update_new_posts()
         elif process_name == 'update_job_profiles':
-            if len(sys.argv)>2:
+            if len(sys.argv) > 2:
                 limit = int(sys.argv[2])
-                update_job_profiles(limit)
+                if len(sys.argv) > 3:
+                    screen = (sys.argv[3] == 'True')
+                    print('limit %s profiles, score and screen: %s' % (limit, screen))
+                    update_job_profiles(limit, screen)
+                else:
+                    print('limit %s profiles' % limit)
+                    update_job_profiles(limit)
             else:
                 update_job_profiles()
     else:

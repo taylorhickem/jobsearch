@@ -8,6 +8,7 @@ from agent import JobSearchWebsite
 
 jobsite = None
 profiles = None
+
 mainURL = ''
 FIELD_CONFIG = {
     'mcf_ref':{'tag_class':'span',
@@ -49,23 +50,26 @@ def load(db_only=False):
     if db.table_exists('profile'):
         profiles = db.get_table('profile')
 
+
 def update_job_profiles(limit=200):
-    profileRcds= [] ; failed = []
+    profileRcds= []; failed = []
     idList = get_profile_ids().values.tolist()
-    if len(idList)>limit:
+    if len(idList) > limit:
         idList = idList[:limit]
     for prfid in idList:
         try:
             rcd = get_profileRecord(prfid[1], prfid[0], mainURL)
             profileRcds.append(rcd)
+
         except:
             print('error encountered while trying to parse profile page for job %s ' % prfid[0])
             failed.append(prfid)
     num_failed = len(failed)
-    if num_failed>0:
+    if num_failed > 0:
         print('%d profile(s) encountered an error' % num_failed)
     profiles = pd.DataFrame.from_records(profileRcds)
     update_db(profiles)
+
 
 def get_profile_ids():
     global profiles
@@ -73,7 +77,7 @@ def get_profile_ids():
     to find the job openings which haven't yet had their profiles recorded
     '''
     #get job ids from job table
-    jobs = db.get_jobs().sort_values('posted_date',ascending=False)
+    jobs = db.get_jobs().sort_values('posted_date', ascending=False)
     #get job ids from profile table (first check if profile table exists)
     #this is local working copy which will be modified and then at the end pushed back to the db
     if profiles is None:
@@ -90,12 +94,12 @@ def get_profileRecord(urlid,jobid='',mainURL=None):
         fieldValue = None
         fldcfg = FIELD_CONFIG[field_name]
         fieldStr = get_tag_element(pageSoup,fldcfg['tag_class'],
-                                   fldcfg['html_keyword'],fldcfg['drop_chr'])
+                                   fldcfg['html_keyword'], fldcfg['drop_chr'])
         if not fieldStr is None:
             if fldcfg['type'] == 'int':
                 fieldValue = int(fieldStr)
             elif fldcfg['type'] == 'date':
-                fieldValue = dt.datetime.strptime(fieldStr,fldcfg['datetime_format']).date()
+                fieldValue = dt.datetime.strptime(fieldStr, fldcfg['datetime_format']).date()
             else:
                 fieldValue = fieldStr
         return fieldValue
@@ -180,7 +184,7 @@ def update_db(new_profiles=None):
             else:
                 profiles = new_profiles
     #push the new 'profiles' records to the sqlite database
-    db.update_table(profiles,'profile',append=False)
+    db.update_table(profiles, 'profile', append=False)
 
 # ----------------------------------------------------
 # profile evaluation
@@ -189,8 +193,9 @@ def update_db(new_profiles=None):
 def update_evaluations():
     ''' updates the sql database with the evaluations from the google sheet
     '''
+    db.load()
     evals = db.get_sheet('evaluate')
-    db.update_table(evals,'evaluate',append=False)
+    db.update_table(evals, 'evaluate', append=False)
 
 # ----------------------------------------------------
 # ***
