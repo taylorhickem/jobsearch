@@ -188,6 +188,7 @@ def get_sheet(rng_code):
                     rng[field] = rng[field].astype(typeId)
             if typeId == 'date':
                 if 'date_format' in rng_config:
+                    rng[field] = rng[field].fillna('')
                     rng[field] = rng[field].apply(
                         lambda x: dt.datetime.strptime(x, rng_config['date_format'])
                     if len(x) > 0 else None)
