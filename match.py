@@ -42,12 +42,18 @@ def load_job_profiles():
         return subset
 
     #01 load jobs tbl
-    jobs = db.get_jobs()
+    jobs_all = db.get_jobs()
+    #01b filter for past 90 days
+    cutoff_date = dt.datetime.now().date() - dt.timedelta(days=90)
+    jobs_all['posted_date_dt'] = jobs_all.posted_date.apply(
+        lambda x: dt.datetime.strptime(x, '%Y-%m-%d').date())
+    jobs = jobs_all[jobs_all.posted_date_dt > cutoff_date].copy()
+    del jobs['posted_date_dt']
     #02 load profiles tbl
     prf.load(db_only=True)
     profiles = prf.profiles.copy()
     #03 merge, group by industry and save to profiles
-    profiles = pd.merge(profiles,jobs,on='jobid')
+    profiles = pd.merge(profiles, jobs, on='jobid')
     #convert date format to datetime.date
     profiles['closing_date'] = profiles['closing_date'].apply(lambda x:x.date())
     ics = get_ics('focus')
@@ -117,7 +123,7 @@ def get_match_report():
 def update_matches():
     '''updates the match table from the titles table by dropping fields
     '''
-    global titles, matches
+    global profiles, matches
     #fields to keep : jobid, clean_title, match_auto
     fields = ['jobid', 'clean_title', 'match_auto']
     score_positions()
@@ -179,7 +185,7 @@ def score_profile_title():
 def update_screened():
     ''' drops the rejected positions and filters for recent based on posted_date
     '''
-    global titles, jobs, screened
+    global profiles, screened
     weeks = SEARCH_CONFIG['match']['age_weeks']
     match_score_min = SEARCH_CONFIG['match']['match_score_min']
     fields = ['match_auto','week','clean_title','company_name', 'jobid', 'url','salaryHigh','salary_pct',
@@ -220,7 +226,7 @@ def update_tags():
     tx.push_tag_gsheets_to_sql()
     bigrams = tx.get_new_bigrams(profiles,export=True).set_index('tag')
     #03 compare to current tag library and break into new and current
-    if len(bigrams)>0:
+    if len(bigrams) > 0:
         lib = tx.tag_tbls['title']['data'].set_index('tag').copy()
         current_tags = list(set(bigrams.index).intersection(set(lib.index)))
         new_tags = list(set(bigrams.index).difference(set(lib.index)))
@@ -247,15 +253,16 @@ def update_tags():
         rng_code = tx.tag_sheets['title']['name']
         db.post_to_gsheet(title,rng_code,input_option='USER_ENTERED')
 
+
 def get_ics(list_type='keep'):
     ic = tx.tag_sheets['ic']['data']
     field_name = 'industry_classification'
-    if list_type=='keep':
-        ics = ic[ic.match>-1][field_name].values
-    elif list_type =='focus':
-        ics = ic[ic.match==1][field_name].values
-    elif list_type =='drop':
-        ics = ic[ic.match ==-1][field_name].values
+    if list_type == 'keep':
+        ics = ic[ic.match >- 1][field_name].values
+    elif list_type == 'focus':
+        ics = ic[ic.match == 1][field_name].values
+    elif list_type == 'drop':
+        ics = ic[ic.match == -1][field_name].values
     return ics
 
 #get frequency distribution of tags
