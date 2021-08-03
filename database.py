@@ -117,14 +117,15 @@ def add_jobs(jobs,append=True):
         ifex = 'replace'
     jobs.to_sql('job', con=engine, if_exists=ifex, index=False)
 
-def update_match(new_matches,update=True):
+
+def update_match(new_matches, update=True):
     global engine
     match = get_table('match')
     if match is None:
         match = new_matches
     else:
-        new_matches.set_index('jobid',inplace=True)
-        match.set_index('jobid',inplace=True)
+        new_matches.set_index('jobid', inplace=True)
+        match.set_index('jobid', inplace=True)
         match.update(new_matches)
         match.reset_index(inplace=True)
     match.to_sql('match', con=engine, if_exists='replace', index=False)
