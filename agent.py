@@ -17,10 +17,14 @@ import database
 
 chrome_options = Options()
 chrome_options.add_argument("--headless")
+chrome_options.add_argument("--silent")
+chrome_options.add_experimental_option("excludeSwitches", ["enable-logging"])
+chrome_options.add_argument('--log-level=3')
 #chrome_options.binary_location = '/Applications/Google Chrome
 
-files = {'job_openings':'jobopenings.csv'}
+files = {'job_openings': 'jobopenings.csv'}
 CHROMEDRIVER_DOWNLOAD_URL = 'https://chromedriver.chromium.org/downloads'
+
 
 class JobSearchWebsite(object):
     report_folder = ''
@@ -36,7 +40,7 @@ class JobSearchWebsite(object):
     resultTag = 'search-results'
     resultMarkers = ['<div data-cy="search-result-headers">', 'jobs found']
     cardTag = 'job-card-'
-    jobs = {'records':None,'filename':None}
+    jobs = {'records': None, 'filename': None}
     cardsPerPage = 20
     searchFieldsd = {}
     search_defaults = {}
@@ -47,7 +51,7 @@ class JobSearchWebsite(object):
     reportFields = ['date', 'source', 'job location', 'employment type', 'job category',
                     'monthly salary', 'matching jobs', 'total jobs']
 
-    def __init__(self, name='MyCareerFutures', mainURL='https://www.mycareersfuture.sg/',
+    def __init__(self, name='MyCareerFutures', mainURL='https://www.mycareersfuture.gov.sg/',
                  searchFields={'salary', 'employmentType', 'category'},
                  search_defaults={'sort': 'new_posting_date', 'page': 0},
                  load_driver=True,data_source='db'):
@@ -86,12 +90,12 @@ class JobSearchWebsite(object):
             print("Unexpected error:", sys.exc_info()[0])
             raise
 
-    def set_report_parameters(self, salaryLevels, categories, employmentType='Full Time',
+    def set_report_parameters(self, salaryLevels, categories, employmentType='Full%20Time',
                               location='Singapore',
                               report_folder='C:\\Users\\taylo\\Helva\\05 Business Development\\03 active income'):
-        self.salaryLevels = salaryLevels;
+        self.salaryLevels = salaryLevels
         self.categories = categories
-        self.employmentType = employmentType;
+        self.employmentType = employmentType
         self.location = location
         self.report_folder = report_folder
 
@@ -104,7 +108,7 @@ class JobSearchWebsite(object):
             for salary in self.salaryLevels:
                 checkpoint = timer()
                 #          date ,     source, location,         emp type, category, salary, matching jobs, jobs total
-                qryResult = self.jobsearchQuery(salary, search, self.employmentType)
+                qryResult = self.jobsearchQuery(salary, search)
                 queryJobs = qryResult['query jobs']
                 totalJobs = qryResult['total jobs']
                 rcdRow = [report_date, self.name, self.location, self.employmentType, search, salary, queryJobs, totalJobs]
@@ -120,7 +124,7 @@ class JobSearchWebsite(object):
         self.report.to_csv(self.report_folder + '\\jobsearchreport.csv')
         print('job report complete in %.2f min' % (1 / 60 * (timer() - report_start)))
 
-    def jobsearchQuery(self, salary=1000, search='Professional Services'):
+    def jobsearchQuery(self, salary=7000, search='Professional Services'):
         qryURL = self.jobsearch_URLquery(salary, search, page=self.search_defaults['page'])
         qryResult = self.get_searchResults(qryURL)
         return qryResult
@@ -136,14 +140,15 @@ class JobSearchWebsite(object):
 
     def jobsearch_URLquery(self, salary, search, page=0):
         filters = {}
-        filters['search'] = search;
-        filters['salary'] = salary;
+        filters['search'] = search
+        filters['salary'] = salary
+        filters['employmentType'] = self.employmentType
         qryURL = self.url_query(self.mainURL, filters, sort=self.search_defaults['sort'], page=page)
         return qryURL
 
     def refresh_pageSoup(self, qryURL):
         self.driver.get(qryURL)
-        time.sleep(2)
+        time.sleep(15)
         pageStr = self.driver.page_source
         self.pageSoup = bs4.BeautifulSoup(pageStr, self.parserStr)
 
@@ -153,29 +158,33 @@ class JobSearchWebsite(object):
 
     def searchresults_fromSoup(self, soupObj):
         elmList = soupObj.findAll(self.resultElementTag)
-        divStr = [str(x.div) for x in elmList if self.resultTag in str(x)][0]
-        markers = [divStr.find(self.resultMarkers[x]) for x in [0, 1]]
-        resultStr = divStr[markers[0] + len(self.resultMarkers[0]):markers[1] - 1]
-        if 'of' in resultStr:
-            strPairs = [x.strip().replace(',', '') for x in resultStr.split('of')]
+        search_result_div = [str(x.div) for x in elmList if self.resultTag in str(x)]
+        if len(search_result_div) > 0:
+            divStr = search_result_div[0]
+            markers = [divStr.find(self.resultMarkers[x]) for x in [0, 1]]
+            resultStr = divStr[markers[0] + len(self.resultMarkers[0]):markers[1] - 1]
+            if 'of' in resultStr:
+                strPairs = [x.strip().replace(',', '') for x in resultStr.split('of')]
+            else:
+                strPairs = [x.strip().replace(',', '') for x in [resultStr,resultStr]]
+            resPair = [0 if x == '' else int(x) for x in strPairs]
+            if len(resPair) == 2:
+                resDict = {'query jobs': resPair[0], 'total jobs': resPair[1]}
+            else:
+                resDict = {'query jobs': resPair[0], 'total jobs': resPair[0]}
         else:
-            strPairs = [x.strip().replace(',', '') for x in [resultStr,resultStr]]
-        resPair = [0 if x == '' else int(x) for x in strPairs]
-        if len(resPair) == 2:
-            resDict = {'query jobs': resPair[0], 'total jobs': resPair[1]}
-        else:
-            resDict = {'query jobs': resPair[0], 'total jobs': resPair[0]}
+            resDict = {'query jobs': 0, 'total jobs': 0}
         return resDict
 
     def get_jobRecord_fromcard(self, cardObj):
         # salary
         def get_salaryHigh(cardObj):
-            salary_divTag = 'lh-solid'  # unique tag identifier for the salary information
-            divTags = cardObj.find_all('div')
-            salaryDiv = [y for y in [x for x in divTags if
-                                     x.has_attr('class')] if salary_divTag in y['class']][0]
-            salaryHighStr = salaryDiv.text.split('to')[1]  # $8,000 (str)
-            salaryHigh = int(salaryHighStr.replace(',', '').replace('$', ''))  # 8000 (int)
+            salaryHigh = None
+            spanTags = cardObj.find_all('span')
+            salaryHigh_tagsearch = [str(x.contents[1]) for x in spanTags if (x.has_attr('class') and len(x) > 1)]
+            if len(salaryHigh_tagsearch) > 0:
+                salaryHighStr = salaryHigh_tagsearch[0]
+                salaryHigh = int(salaryHighStr.replace(',', '').replace('$', ''))  # 8000 (int)
             return salaryHigh
 
         # title
@@ -189,30 +198,44 @@ class JobSearchWebsite(object):
 
         # posted date
         def get_posted_date(cardObj):
-            posted_keyword = 'last-posted-date'  # unique tag identifier
-            postedSection = [y for y in cardObj.find_all('section') if posted_keyword in str(y)][0]
-            leftbloc = 'data-cy="job-card__last-posted-date">'
-            rightbloc = '</span></section>'
-            postedStr = re.search(leftbloc + '(.*)' + rightbloc, str(postedSection)).group(1)
-            leftbloc2 = 'Posted '
-            daysStr_1 = re.search(leftbloc2 + '(.*)', postedStr).group(1)
+            postedDate = None
+            posted_keyword = 'job-card-date-info'  # unique tag identifier
 
-            # convert from x days ago to datetime.date
-            todayDate = dt.datetime.today().date()
-            dayShift = 0
-            if daysStr_1 == 'today':
-                postedDate = todayDate
-            elif daysStr_1 == 'yesterday':
-                dayShift = 1
-            else:
-                rightbloc2 = ' days ago'
-                try:
-                    dayShift = int(re.search('(.*)' + rightbloc2, daysStr_1).group(1))
-                except:
-                    urlid = get_urlid(cardObj)
-                    print('urlid: %s, original: %s, left filter: %s' % (urlid,postedStr, daysStr_1))
+            def posted_date_tag(section_tag):
+                pd_tag = None
+                if len(section_tag.contents) > 0:
+                    if section_tag.contents[0].has_attr('data-cy'):
+                        cy_tag = section_tag.contents[0]['data-cy']
+                        if cy_tag == posted_keyword:
+                            pd_tag = section_tag
+                return pd_tag
 
-            postedDate = todayDate - dt.timedelta(days=dayShift)
+            posted_date_tags = [y for y in cardObj.find_all('section') if posted_date_tag(y) is not None]
+
+            if len(posted_date_tags) > 0:
+                posted_date_tag = posted_date_tags[0]
+                leftbloc = 'data-cy="job-card-date-info">'
+                rightbloc = '</span>'
+                postedStr = re.search(leftbloc + '(.*)' + rightbloc, str(posted_date_tag)).group(1)
+                leftbloc2 = 'Posted '
+                daysStr_1 = re.search(leftbloc2 + '(.*)', postedStr).group(1)
+
+                # convert from x days ago to datetime.date
+                todayDate = dt.datetime.today().date()
+                dayShift = 0
+                if daysStr_1 == 'today':
+                    postedDate = todayDate
+                elif daysStr_1 == 'yesterday':
+                    dayShift = 1
+                else:
+                    rightbloc2 = ' days ago'
+                    try:
+                        dayShift = int(re.search('(.*)' + rightbloc2, daysStr_1).group(1))
+                    except:
+                        urlid = get_urlid(cardObj)
+                        print('urlid: %s, original: %s, left filter: %s' % (urlid,postedStr, daysStr_1))
+
+                postedDate = todayDate - dt.timedelta(days=dayShift)
             return postedDate
 
         # company name
@@ -226,37 +249,45 @@ class JobSearchWebsite(object):
 
         # url id
         def get_urlid(cardObj):
-            url_keyword = 'JobCard__card'  # unique tag identifier
-            urlA = [y for y in cardObj.find_all('a') if url_keyword in str(y)][0]
-            leftbloc = 'href="/job/'
-            rightbloc = '"><div class="w-80-l w-100 flex flex-wrap'
-            prjidStr = re.search(leftbloc + '(.*)' + rightbloc, str(urlA)).group(1)
+            url_keyword = 'href'  # unique tag identifier
+            urlA = str([y[url_keyword] for y in cardObj.find_all('a') if url_keyword in str(y)][0])
+            url_modifier = '?'
+            if url_modifier in urlA:
+                prjidStr = urlA[:urlA.find(url_modifier)]
+            else:
+                prjidStr = urlA
+            #drop /job/ if present
+            prjidStr = prjidStr.replace('/job/', '')
             return prjidStr
 
         # job id
         def get_jobid(job_dict):
             jobid = '-'.join([job_dict['source'],
                               job_dict['urlid'][-32:],
-                              dt.datetime.strftime(job_dict['posted_date'],'%Y-%m-%d')])
+                              dt.datetime.strftime(job_dict['posted_date'], '%Y-%m-%d')])
             return jobid
 
         jobRecord = {}
-        jobRecord['salaryHigh'] = get_salaryHigh(cardObj)
-        jobRecord['position_title'] = get_position_title(cardObj)
-        jobRecord['posted_date'] = get_posted_date(cardObj)
-        jobRecord['company_name'] = get_company_name(cardObj)
-        jobRecord['urlid'] = get_urlid(cardObj)
+        jobRecord['salaryHigh'] = get_salaryHigh(cardObj) #2022-04-16 17:00
+        jobRecord['position_title'] = get_position_title(cardObj) #2022-04-16 17:07
+        jobRecord['posted_date'] = get_posted_date(cardObj) #2022-04-17 10:35
+        jobRecord['company_name'] = get_company_name(cardObj) #2022-04-17 10:37
+        jobRecord['urlid'] = get_urlid(cardObj) #2022-04-17 11:32
         jobRecord['source'] = self.name
         jobRecord['jobid'] = get_jobid(jobRecord)
         jobRecord['src_methodid'] = 0 # web scraping
         return jobRecord
 
-
-    def jobRecords_query(self,salary, search):
+    def jobRecords_query(self, salary, search, page_max=None):
         cardcount = 1; page = 0; jobs = None
-        while cardcount > 0:
+        if page_max is None:
+            query_condition = (cardcount > 0)
+        else:
+            query_condition = ((cardcount > 0) and (page <= page_max))
+        while query_condition:
             qryURL = self.jobsearch_URLquery(salary, search, page)
             self.refresh_pageSoup(qryURL)
+            time.sleep(10)
 
             # list of cards using the tag 'job-card-'
             cards = [y for y in [x for x in self.pageSoup.find_all('div')
@@ -270,21 +301,26 @@ class JobSearchWebsite(object):
                         rcd = self.get_jobRecord_fromcard(x)
                         rcds.append(rcd)
                     except:
-                        print('error encountered for card %s on page %d' % ( x['id'],page))
+                        print('error encountered for card %s on page %d' % (x['id'], page))
                 morejobs = pd.DataFrame.from_records(rcds)
                 if page == 0:
                     jobs = morejobs
                 else:
                     jobs = jobs.append(morejobs)
+            print('captured %s cards on page %s' % (cardcount, page))
             page = page + 1
+            if page_max is None:
+                query_condition = (cardcount > 0)
+            else:
+                query_condition = ((cardcount > 0) and (page <= page_max))
 
         return jobs
 
-    def update_jobRecords(self):
+    def update_jobRecords(self, page_max=None):
         qrycount=0; jobset = []
         for salary in self.salaryLevels:
             for search in self.categories:
-                qryjobs = self.jobRecords_query(salary, search)
+                qryjobs = self.jobRecords_query(salary, search, page_max)
                 if not qryjobs is None:
                     jobset.append(qryjobs)
         if len(jobset) == 0:

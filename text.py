@@ -87,7 +87,7 @@ def push_tag_gsheets_to_sql(skip=[]):
     for tag_type in tag_sheets:
         if not tag_type in skip:
             db.update_table(tag_sheets[tag_type]['data'],
-                            tag_tbls[tag_type]['name'],append=False)
+                            tag_tbls[tag_type]['name'], append=False)
     load_tags_sql()
 
 # ----------------------------------------------------
