@@ -36,7 +36,7 @@ def load_config():
 def load_job_profiles():
     'load job profiles from sql, append fields from job card and group by industry'
     global profiles
-    def get_profiles_by_ic(profiles,ic):
+    def get_profiles_by_ic(profiles, ic):
         hasic = profiles[~profiles.industry_classification.isnull()].copy()
         subset = hasic[hasic.industry_classification.str.contains(ic)]
         return subset
@@ -55,7 +55,7 @@ def load_job_profiles():
     #03 merge, group by industry and save to profiles
     profiles = pd.merge(profiles, jobs, on='jobid')
     #convert date format to datetime.date
-    profiles['closing_date'] = profiles['closing_date'].apply(lambda x:x.date())
+    profiles['closing_date'] = profiles['closing_date'].apply(lambda x: x.date())
     ics = get_ics('focus')
     subsets = []
     for ic in ics:
@@ -171,8 +171,8 @@ def score_profile_title():
     profiles = tx.add_clean_deranked_titles(profiles)
     feature_names, X_v = tx.get_bigram_matrix(profiles.deranked_title)
     title_tags = tx.tag_sheets['title']['data'].copy()
-    feature_scores = pd.merge(pd.DataFrame({'tag':feature_names}),
-                              title_tags[['tag','score']],on='tag',how='left')['score'].values
+    feature_scores = pd.merge(pd.DataFrame({'tag': feature_names}),
+                              title_tags[['tag', 'score']], on='tag', how='left')['score'].values
     feature_scores = [0 if pd.isna(x) else x for x in feature_scores]
     title_scores = tx.np.array(tx.np.matmul(X_v.todense(),
                                             tx.np.array(feature_scores).transpose()))[0]

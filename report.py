@@ -23,25 +23,32 @@ DATE_FORMAT = '%Y-%m-%d'
 SEARCH_CONFIG = {}
 
 
-def load(db_only=False):
+def load_job_agent():
     global jobsite
-    if not db_only:
-        if jobsite is None:
-            jobsite = agent.JobSearchWebsite()
+    if jobsite is None:
+        jobsite = agent.JobSearchWebsite()
+
+
+def load(db_only=False):
     db.load()
+    load_config()
+    if not db_only:
+        load_job_agent()
 
 
 def load_config():
+    global SEARCH_CONFIG
     SEARCH_CONFIG = db.CONFIG_FILES['search']['data']
 
+
 # 01.01 run one qry
-def run_searchQry(salaryLevel,category):
+def run_searchQry(salaryLevel, category):
     global qryResult
     qryResult= jobsite.jobsearchQuery(salaryLevel, category, jobsite.employmentType)
 
 
 def sample_qry():
-    salaryLevel = 5000 ; category = 'Engineering'
+    salaryLevel = 5000; category = 'Engineering'
     run_searchQry(salaryLevel,category)
 
 
@@ -54,53 +61,57 @@ def get_pagesource(salaryLevel,category,page=0):
     pageStr = jobsite.driver.page_source
     return pageStr
 
+
 # 01.03 run screening report
 def run_screening_report():
+    load()
     #set the job type categories and salary levels for the report
-    categories = ['Sciences%20%2F%20Laboratory%20%2F%20R%26D','Consulting','Engineering','Design']
+    categories = ['Consulting', 'Data%20Analyst', 'Data%20Scientist',
+                  'Data%20Engineer', 'Machine%20Learning', 'Python']
+    #categories = ['Sciences%20%2F%20Laboratory%20%2F%20R%26D', 'Consulting', 'Engineering', 'Design']
     #categories = ['Consulting','Engineering','Design','Sciences / Laboratory / R&D','Education and Training','Manufacturing',
     #              'Information Technology','Healthcare / Pharmaceutical', 'Logistics / Supply Chain',
     #              'Risk Management','Others']
-    salaryLevels = [2000,3000,4000,5000,6000,7000,8000]
-    jobsite.set_report_parameters(salaryLevels,categories)
+    salaryLevels = [3000, 5000, 7000, 9000, 11000, 13000, 15000]
+    jobsite.set_report_parameters(salaryLevels, categories)
     jobsite.run_report()
     nowtimeStr = dt.datetime.strftime(dt.datetime.now(), '%Y-%m-%d %H:%M:%S')
     print('report created at %s' % nowtimeStr)
 
+
 # 01.04 run job records report
-def update_jobRecords():
+def update_jobRecords(page_max=None):
+    load(db_only=True)
+    starttime = time.time()
+    jobCount_i = len(db.get_jobs())
     keywords = SEARCH_CONFIG['search']['keywords']
-    #focus = ['Consulting','Engineering','Professional Services',
-    #              'Science','Environment','Information Technology','Manufacturing']
     salary_min = SEARCH_CONFIG['search']['salary_min']
-    jobsite.set_report_parameters([salary_min],keywords)
-    jobsite.update_jobRecords()
+    load_job_agent()
+    jobsite.set_report_parameters([salary_min], keywords)
+    jobsite.update_jobRecords(page_max)
     nowtimeStr = dt.datetime.strftime(dt.datetime.now(), '%Y-%m-%d %H:%M:%S')
-    print('report created at %s' % nowtimeStr)
+    new_jobs = len(db.get_jobs()) - jobCount_i
+    elapsed = time.time() - starttime
+    e_min = math.floor(elapsed / 60)
+    e_sec = elapsed - e_min * 60
+    print('added %d new jobs in %d min :%d sec at %s' % (new_jobs, e_min, e_sec, nowtimeStr))
 
 
-def update_jobs_report(from_file=False):
+def update_jobs_report():
     #01 query job openings from MyCareerFutures website
-
-    if from_file:
-        jobs=pd.read_csv('jobopenings.csv')
-    else:
         starttime = time.time()
         load()
         jobCount_i = len(db.get_jobs())
-        categories = ['Consulting', 'Engineering', 'Professional Services',
-                      'Science', 'Environment', 'Information Technology', 'Manufacturing']
-        salaryLevels = [5000]
-        jobsite.set_report_parameters(salaryLevels,categories)
+        keywords = SEARCH_CONFIG['search']['keywords']
+        salary_min = SEARCH_CONFIG['search']['salary_min']
+        jobsite.set_report_parameters([salary_min], keywords)
         jobsite.update_jobRecords()
-        jobs = jobsite.jobs['records']
-        match.load()
         screen_jobs()
         new_jobs = len(db.get_jobs())-jobCount_i
         elapsed = time.time()-starttime
         e_min = math.floor(elapsed/60)
         e_sec = elapsed-e_min*60
-    print('added %d new jobs in %d min :%d sec' % (new_jobs,e_min,e_sec))
+        print('added %d new jobs in %d min :%d sec' % (new_jobs, e_min, e_sec))
 
 
 def screen_jobs():
@@ -108,10 +119,10 @@ def screen_jobs():
     match.screen_jobs()
 
 
-def update_job_profiles(limit=200, screen=True):
+def update_job_profiles(limit=200, screen=True, progress_updates=False):
     #200 records ~ 15 minute runtime
     mcf_profile.load()
-    mcf_profile.update_job_profiles(limit)
+    mcf_profile.update_job_profiles(limit, progress_updates)
     if screen:
         screen_jobs()
 
@@ -133,7 +144,7 @@ def get_weeknums(date_str_series):
         return date_series.apply(lambda x:dt.datetime.strptime(x,DATE_FORMAT).date())
     this_monday = get_monday(dt.datetime.now().date())
     date_series = convert_date_series(date_str_series)
-    weeknums = date_series.apply(lambda x:get_weeknum(x,this_monday))
+    weeknums = date_series.apply(lambda x: get_weeknum(x, this_monday))
     return weeknums
 
 
@@ -156,7 +167,11 @@ def autorun():
         if process_name == 'update_jobs_report':
             update_jobs_report()
         elif process_name == 'update_jobRecords':
-            update_jobRecords()
+            if len(sys.argv) > 2:
+                page_max = int(sys.argv[2])
+                update_jobRecords(page_max)
+            else:
+                update_jobRecords()
         elif process_name == 'screen_jobs':
             screen_jobs()
         elif process_name == 'update_new_posts':
@@ -167,13 +182,21 @@ def autorun():
                 limit = int(sys.argv[2])
                 if len(sys.argv) > 3:
                     screen = (sys.argv[3] == 'True')
-                    print('limit %s profiles, score and screen: %s' % (limit, screen))
-                    update_job_profiles(limit, screen)
+                    print('limit %s profiles, score and screen? %s' % (limit, screen))
+                    if len(sys.argv) > 4:
+                        progress_updates = (sys.argv[4] == 'True')
+                        update_job_profiles(limit, screen, progress_updates)
+                    else:
+                        update_job_profiles(limit, screen)
                 else:
                     print('limit %s profiles' % limit)
                     update_job_profiles(limit)
             else:
                 update_job_profiles()
+        elif process_name == 'run_screening_report':
+            run_screening_report()
+        else:
+            print('report name not found')
     else:
         print('no report specified')
 
