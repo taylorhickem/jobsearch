@@ -13,7 +13,8 @@ import report
 #----------------------------------------------------
 #Static variables
 #----------------------------------------------------
-
+TODAY_DATE = ''
+TITLE_SCORE_BATCH = 500
 profiles = None
 matches = None
 screened = None
@@ -30,8 +31,10 @@ def load():
     load_config()
 
 def load_config():
-    global SEARCH_CONFIG
+    global SEARCH_CONFIG, TODAY_DATE
     SEARCH_CONFIG = db.CONFIG_FILES['search']['data']
+    TODAY_DATE = dt.datetime.now().date()
+
 
 def load_job_profiles():
     'load job profiles from sql, append fields from job card and group by industry'
@@ -155,28 +158,57 @@ def match_score(pct, title_score):
     if title_score > 0:
         quantile = 3
         if not pd.isnull(pct):
-            quantile = 1+[pct < x for x in [0.25, 0.5, 0.75, 1]].index(True)
+            if pct < 1:
+                quantile = 1+[pct < x for x in [0.25, 0.5, 0.75, 1]].index(True)
+            else:
+                quantile = 4
         score = 1/quantile*(1+title_score)
     else:
         score = 0
     return score
 
 
-def score_profile_title():
-    global profiles
-    #01 load job profiles from sql
-    load_job_profiles()
-    #02 get bigram matrix from profiles
-    tx.push_tag_gsheets_to_sql(skip=['title'])
-    profiles = tx.add_clean_deranked_titles(profiles)
-    feature_names, X_v = tx.get_bigram_matrix(profiles.deranked_title)
-    title_tags = tx.tag_sheets['title']['data'].copy()
-    feature_scores = pd.merge(pd.DataFrame({'tag': feature_names}),
-                              title_tags[['tag', 'score']], on='tag', how='left')['score'].values
-    feature_scores = [0 if pd.isna(x) else x for x in feature_scores]
-    title_scores = tx.np.array(tx.np.matmul(X_v.todense(),
-                                            tx.np.array(feature_scores).transpose()))[0]
-    profiles['title_score'] = title_scores
+def score_profile_title(unscored=None):
+    if unscored is None:
+        global profiles
+
+        #01 load job profiles from sql
+        load_job_profiles()
+        unscored = profiles.copy()
+        profile_count = len(unscored)
+        if profile_count <= TITLE_SCORE_BATCH:
+            scored = score_profile_title(unscored)
+        else:
+            batch_ids = [i//TITLE_SCORE_BATCH
+                         for i in list(range(0, profile_count))]
+            batch_count = max(batch_ids) + 1
+            unscored_batches = [unscored.iloc[batch_ids.index(i):batch_ids.index(i + 1)]
+                       for i in range(batch_count - 1)] + [
+                unscored.iloc[batch_ids.index(batch_count - 1):]]
+            scored_batches = []
+            for u in unscored_batches:
+                s = score_profile_title(u)
+                scored_batches.append(s)
+            scored = pd.concat(scored_batches)
+
+        profiles = scored.copy()
+    else:
+        scored = unscored.copy()
+        #03 get bigram matrix from profiles
+        tx.push_tag_gsheets_to_sql(skip=['title'])
+        scored = tx.add_clean_deranked_titles(scored)
+        #try:
+        feature_names, X_v = tx.get_bigram_matrix(scored.deranked_title)
+        title_tags = tx.tag_sheets['title']['data'].copy()
+        feature_scores = pd.merge(pd.DataFrame({'tag': feature_names}),
+                                  title_tags[['tag', 'score']], on='tag', how='left')['score'].values
+        feature_scores = [0 if pd.isna(x) else x for x in feature_scores]
+        title_scores = tx.np.array(tx.np.matmul(X_v.todense(),
+                                                tx.np.array(feature_scores).transpose()))[0]
+        scored['title_score'] = title_scores
+        #except:
+        #    pass
+        return scored
 
 #----------------------------------------------------
 #Screening
@@ -195,7 +227,8 @@ def update_screened():
     screened = profiles.reset_index()[[x for x in fields if not x == 'week']]
     screened.fillna(0, inplace=True)
     screened = add_weeks(screened)
-    recent = screened[screened['week'] <= weeks]
+    recent = screened[screened['week'] <= weeks].copy()
+    recent = recent[recent['closing_date'] >= TODAY_DATE].copy()
     keep = recent[(recent.match_auto >= match_score_min) | (recent.src_methodid == 1)]
     screened = keep[fields].sort_values(['week', 'match_auto'], ascending=(True, False))
     #post to gsheet

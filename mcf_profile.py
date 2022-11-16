@@ -53,32 +53,34 @@ def load(db_only=False):
 
 def update_job_profiles(limit=200, progress_updates=False):
     progress_increments = 10
-    profileRcds= []; failed = []
-    idList = get_profile_ids().values.tolist()
-    if len(idList) > limit:
-        idList = idList[:limit]
-    if progress_updates:
-        starttime = time.time()
-        profile_count = 0
-    for prfid in idList:
-        try:
-            rcd = get_profileRecord(prfid[1], prfid[0], mainURL)
-            profileRcds.append(rcd)
-        except:
-            print('error encountered while trying to parse profile page for job %s ' % prfid[0])
-            failed.append(prfid)
-
+    profileRcds = []; failed = []
+    profileids = get_profile_ids()
+    if profileids is not None:
+        idList = profileids.values.tolist()
+        if len(idList) > limit:
+            idList = idList[:limit]
         if progress_updates:
-            profile_count = len(profileRcds)
-            if profile_count % progress_increments == 0:
-                elapsed_sec = time.time() - starttime
-                print('captured %s profiles in %.1f sec ' % (profile_count, elapsed_sec))
+            starttime = time.time()
+            profile_count = 0
+        for prfid in idList:
+            try:
+                rcd = get_profileRecord(prfid[1], prfid[0], mainURL)
+                profileRcds.append(rcd)
+            except:
+                print('error encountered while trying to parse profile page for job %s ' % prfid[0])
+                failed.append(prfid)
 
-    num_failed = len(failed)
-    if num_failed > 0:
-        print('%d profile(s) encountered an error' % num_failed)
-    profiles = pd.DataFrame.from_records(profileRcds)
-    update_db(profiles)
+            if progress_updates:
+                profile_count = len(profileRcds)
+                if profile_count % progress_increments == 0:
+                    elapsed_sec = time.time() - starttime
+                    print('captured %s profiles in %.1f sec ' % (profile_count, elapsed_sec))
+
+        num_failed = len(failed)
+        if num_failed > 0:
+            print('%d profile(s) encountered an error' % num_failed)
+        profiles = pd.DataFrame.from_records(profileRcds)
+        update_db(profiles)
 
 
 def get_profile_ids():
@@ -86,6 +88,7 @@ def get_profile_ids():
     ''' minus set operation from tables 'job' and 'profile'
     to find the job openings which haven't yet had their profiles recorded
     '''
+    profileids = None
     #get job ids from job table
     jobs = db.get_jobs().sort_values('posted_date', ascending=False)
     #get job ids from profile table (first check if profile table exists)
@@ -94,7 +97,9 @@ def get_profile_ids():
         profileids = jobs[['jobid', 'urlid']].copy()
     else:
         # compare ids
-        profileids = jobs[~jobs['jobid'].isin(profiles['jobid'])][['jobid', 'urlid']].copy()
+        new_jobids = set(jobs['jobid']).difference(set(profiles['jobid']))
+        if len(new_jobids) > 0:
+            profileids = jobs[jobs['jobid'].isin(new_jobids)][['jobid', 'urlid']].copy()
     return profileids
 
 
@@ -195,10 +200,8 @@ def update_db(new_profiles=None):
     if not new_profiles is None:
         if len(new_profiles) > 0:
             if not profiles is None:
-                profiles=profiles.append(new_profiles)
-                profiles.set_index('jobid', inplace=True)
-                profiles.drop_duplicates(inplace=True)
-                profiles.reset_index(inplace=True)
+                profiles = profiles.append(new_profiles)
+                profiles.drop_duplicates(subset='jobid', inplace=True)
             else:
                 profiles = new_profiles
     #push the new 'profiles' records to the sqlite database
@@ -214,6 +217,7 @@ def update_evaluations():
     db.load()
     evals = db.get_sheet('evaluate')
     db.update_table(evals, 'evaluate', append=False)
+
 
 # ----------------------------------------------------
 # ***

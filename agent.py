@@ -10,10 +10,16 @@ import sys
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import SessionNotCreatedException
+from selenium.webdriver.remote.remote_connection import LOGGER
+import logging
+
 import datetime as dt
 from timeit import default_timer as timer
 import time
 import database
+
+
+LOGGER.setLevel(logging.WARNING)
 
 chrome_options = Options()
 chrome_options.add_argument("--headless")
@@ -24,6 +30,8 @@ chrome_options.add_argument('--log-level=3')
 
 files = {'job_openings': 'jobopenings.csv'}
 CHROMEDRIVER_DOWNLOAD_URL = 'https://chromedriver.chromium.org/downloads'
+EXECUTION_TABLENAME = 'execution_log'
+JOBBATCH_TABLENAME = 'job_batch'
 
 
 class JobSearchWebsite(object):
@@ -34,6 +42,7 @@ class JobSearchWebsite(object):
     driver = None
     pageSoup = None
     name = ''
+    run_timestamp = ''
     mainURL = 'https://'
     parserStr = "html5lib"
     resultElementTag = 'span'
@@ -61,6 +70,7 @@ class JobSearchWebsite(object):
         self.searchFields = searchFields
         self.search_defaults = search_defaults
         self.data_source = data_source
+        self.run_timestamp = dt.datetime.strftime(dt.datetime.now(), '%Y-%m-%d %H:%M:%S')
         self.jobs['filename'] = files['job_openings']
         database.load()
         if load_driver:
@@ -80,7 +90,8 @@ class JobSearchWebsite(object):
     def loadDriver(self):
         try:
             self.driver = webdriver.Chrome(
-                executable_path=os.path.abspath('chromedriver'), options=chrome_options)
+                executable_path=os.path.abspath('chromedriver'),
+                options=chrome_options)
         except SessionNotCreatedException as exc:
             if 'version' in exc.msg.lower():
                 msgStr = 'download the latest chrome webdriver at \n' + CHROMEDRIVER_DOWNLOAD_URL
@@ -199,6 +210,7 @@ class JobSearchWebsite(object):
         # posted date
         def get_posted_date(cardObj):
             postedDate = None
+            postedDate_str = ''
             posted_keyword = 'job-card-date-info'  # unique tag identifier
 
             def posted_date_tag(section_tag):
@@ -233,10 +245,14 @@ class JobSearchWebsite(object):
                         dayShift = int(re.search('(.*)' + rightbloc2, daysStr_1).group(1))
                     except:
                         urlid = get_urlid(cardObj)
-                        print('urlid: %s, original: %s, left filter: %s' % (urlid,postedStr, daysStr_1))
+                        print('urlid: %s, original: %s, left filter: %s' % (urlid, postedStr, daysStr_1))
 
                 postedDate = todayDate - dt.timedelta(days=dayShift)
-            return postedDate
+
+            if postedDate is not None:
+                postedDate_str = postedDate.strftime('%Y-%m-%d')
+
+            return postedDate_str
 
         # company name
         def get_company_name(cardObj):
@@ -264,21 +280,21 @@ class JobSearchWebsite(object):
         def get_jobid(job_dict):
             jobid = '-'.join([job_dict['source'],
                               job_dict['urlid'][-32:],
-                              dt.datetime.strftime(job_dict['posted_date'], '%Y-%m-%d')])
+                              job_dict['posted_date']])
             return jobid
 
         jobRecord = {}
-        jobRecord['salaryHigh'] = get_salaryHigh(cardObj) #2022-04-16 17:00
-        jobRecord['position_title'] = get_position_title(cardObj) #2022-04-16 17:07
-        jobRecord['posted_date'] = get_posted_date(cardObj) #2022-04-17 10:35
-        jobRecord['company_name'] = get_company_name(cardObj) #2022-04-17 10:37
-        jobRecord['urlid'] = get_urlid(cardObj) #2022-04-17 11:32
+        jobRecord['salaryHigh'] = get_salaryHigh(cardObj) #2022-11-12 19:40
+        jobRecord['position_title'] = get_position_title(cardObj) #2022-11-12 19:42
+        jobRecord['posted_date'] = get_posted_date(cardObj) #2022-11-12 19:44
+        jobRecord['company_name'] = get_company_name(cardObj) #2022-11-12 19:46
+        jobRecord['urlid'] = get_urlid(cardObj) #2022-11-12 19:47
         jobRecord['source'] = self.name
         jobRecord['jobid'] = get_jobid(jobRecord)
         jobRecord['src_methodid'] = 0 # web scraping
         return jobRecord
 
-    def jobRecords_query(self, salary, search, page_max=None):
+    def jobRecords_query(self, salary, search, page_max=None, notifications=True):
         cardcount = 1; page = 0; jobs = None
         if page_max is None:
             query_condition = (cardcount > 0)
@@ -287,7 +303,7 @@ class JobSearchWebsite(object):
         while query_condition:
             qryURL = self.jobsearch_URLquery(salary, search, page)
             self.refresh_pageSoup(qryURL)
-            time.sleep(10)
+            time.sleep(4)
 
             # list of cards using the tag 'job-card-'
             cards = [y for y in [x for x in self.pageSoup.find_all('div')
@@ -297,17 +313,19 @@ class JobSearchWebsite(object):
                 # create DataFrame object from card objects
                 rcds = []
                 for x in cards:
-                    try:
+                    #try:
                         rcd = self.get_jobRecord_fromcard(x)
                         rcds.append(rcd)
-                    except:
-                        print('error encountered for card %s on page %d' % (x['id'], page))
+                    #except:
+                    #    if notifications:
+                    #        print('error encountered for card %s on page %d' % (x['id'], page))
                 morejobs = pd.DataFrame.from_records(rcds)
                 if page == 0:
                     jobs = morejobs
                 else:
                     jobs = jobs.append(morejobs)
-            print('captured %s cards on page %s' % (cardcount, page))
+            if notifications:
+                print('captured %s cards on page %s' % (cardcount, page))
             page = page + 1
             if page_max is None:
                 query_condition = (cardcount > 0)
@@ -316,11 +334,11 @@ class JobSearchWebsite(object):
 
         return jobs
 
-    def update_jobRecords(self, page_max=None):
+    def update_jobRecords(self, page_max=None, notifications=True):
         qrycount=0; jobset = []
         for salary in self.salaryLevels:
             for search in self.categories:
-                qryjobs = self.jobRecords_query(salary, search, page_max)
+                qryjobs = self.jobRecords_query(salary, search, page_max, notifications)
                 if not qryjobs is None:
                     jobset.append(qryjobs)
         if len(jobset) == 0:
@@ -329,9 +347,16 @@ class JobSearchWebsite(object):
             jobs = pd.concat(jobset)
             #post new jobs to csv file
             if not jobs is None:
-                jobs.to_csv(self.jobs['filename'],index=False)
+                jobs.to_csv(self.jobs['filename'], index=False)
 
                 #update database with new jobs
+                njid = set(jobs['jobid'])
+                if self.jobs['records'] is None:
+                    new_jobids = list(njid)
+                else:
+                    ejid = set(self.jobs['records']['jobid'])
+                    new_jobids = list(njid.difference(njid.intersection(ejid)))
+
                 if self.jobs['records'] is None:
                     self.jobs['records'] = jobs
                 else:
@@ -340,3 +365,25 @@ class JobSearchWebsite(object):
                     self.jobs['records'].reset_index(inplace=True)
                     del self.jobs['records']['index']
                 database.add_jobs(self.jobs['records'], append=False)
+
+                #update run batch
+                log_rcd = {'id': 0,
+                           'function': 'new_jobcards',
+                           'timestamp': self.run_timestamp}
+                if database.table_exists(EXECUTION_TABLENAME):
+                    ex_log_tbl = database.get_table(EXECUTION_TABLENAME)
+                    log_rcd['id'] = len(ex_log_tbl)
+                    new_log = pd.DataFrame.from_records([log_rcd])
+                    database.update_table(new_log, EXECUTION_TABLENAME, append=True)
+                else:
+                    new_log = pd.DataFrame.from_records([log_rcd])
+                    database.update_table(new_log, EXECUTION_TABLENAME, append=False)
+
+                #update job-batch table
+                new_jobs = jobs[jobs['jobid'].isin(new_jobids)].copy()
+                new_jobs['batchid'] = log_rcd['id']
+                new_jb = new_jobs[['jobid', 'batchid']]
+                if database.table_exists(JOBBATCH_TABLENAME):
+                    database.update_table(new_jb, JOBBATCH_TABLENAME, append=True)
+                else:
+                    database.update_table(new_jb, JOBBATCH_TABLENAME, append=False)
