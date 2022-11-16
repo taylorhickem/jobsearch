@@ -1,0 +1,1 @@
+cd /d C:\Users\taylo\AppData\Local\Programs\Python\Python36\Lib\jobsearch\ & start cmd /k ".\venv\Scripts\activate && python report.py update_job_profiles 600 True True"
