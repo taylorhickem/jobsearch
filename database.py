@@ -101,7 +101,8 @@ def table_exists(tableName):
     load_inspector()
     return tableName in table_names
 
-def update_table(tbl,tblname,append=True):
+
+def update_table(tbl, tblname, append=True):
     global engine
     if append:
         ifex = 'append'

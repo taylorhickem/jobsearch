@@ -2,6 +2,7 @@
 ###
 
 # load packages
+import ctypes
 import sys
 import math
 import time
@@ -80,7 +81,11 @@ def run_screening_report():
 
 
 # 01.04 run job records report
-def update_jobRecords(page_max=None):
+#def update_jobRecords():
+#    ctypes.windll.user32.MessageBoxW(0, "Hello world.", "Message box", 1)
+
+
+def update_jobRecords(notifications=True, page_max=None):
     load(db_only=True)
     starttime = time.time()
     jobCount_i = len(db.get_jobs())
@@ -88,13 +93,14 @@ def update_jobRecords(page_max=None):
     salary_min = SEARCH_CONFIG['search']['salary_min']
     load_job_agent()
     jobsite.set_report_parameters([salary_min], keywords)
-    jobsite.update_jobRecords(page_max)
-    nowtimeStr = dt.datetime.strftime(dt.datetime.now(), '%Y-%m-%d %H:%M:%S')
-    new_jobs = len(db.get_jobs()) - jobCount_i
-    elapsed = time.time() - starttime
-    e_min = math.floor(elapsed / 60)
-    e_sec = elapsed - e_min * 60
-    print('added %d new jobs in %d min :%d sec at %s' % (new_jobs, e_min, e_sec, nowtimeStr))
+    jobsite.update_jobRecords(page_max, notifications)
+    if notifications:
+        nowtimeStr = dt.datetime.strftime(dt.datetime.now(), '%Y-%m-%d %H:%M:%S')
+        new_jobs = len(db.get_jobs()) - jobCount_i
+        elapsed = time.time() - starttime
+        e_min = math.floor(elapsed / 60)
+        e_sec = elapsed - e_min * 60
+        print('added %d new jobs in %d min :%d sec at %s' % (new_jobs, e_min, e_sec, nowtimeStr))
 
 
 def update_jobs_report():
@@ -117,6 +123,7 @@ def update_jobs_report():
 def screen_jobs():
     match.load()
     match.screen_jobs()
+    post.update_post_report()
 
 
 def update_job_profiles(limit=200, screen=True, progress_updates=False):
@@ -168,8 +175,12 @@ def autorun():
             update_jobs_report()
         elif process_name == 'update_jobRecords':
             if len(sys.argv) > 2:
-                page_max = int(sys.argv[2])
-                update_jobRecords(page_max)
+                notifications = (sys.argv[2] == 'True')
+                if len(sys.argv) > 3:
+                    page_max = int(sys.argv[3])
+                    update_jobRecords(notifications, page_max)
+                else:
+                    update_jobRecords(notifications)
             else:
                 update_jobRecords()
         elif process_name == 'screen_jobs':

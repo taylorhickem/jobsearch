@@ -12,3 +12,4 @@ db.sqlite3
 *search_config.json
 *gsheet_config.json
 *client_secret.json
+chromedriver.exe
