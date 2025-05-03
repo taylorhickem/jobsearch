@@ -89,9 +89,7 @@ class JobSearchWebsite(object):
 
     def loadDriver(self):
         try:
-            self.driver = webdriver.Chrome(
-                executable_path=os.path.abspath('chromedriver'),
-                options=chrome_options)
+            self.driver = webdriver.Chrome(options=chrome_options)
         except SessionNotCreatedException as exc:
             if 'version' in exc.msg.lower():
                 msgStr = 'download the latest chrome webdriver at \n' + CHROMEDRIVER_DOWNLOAD_URL
@@ -188,66 +186,74 @@ class JobSearchWebsite(object):
         return resDict
 
     def get_jobRecord_fromcard(self, cardObj):
+        def get_tags(soup_obj, tag_name, attr_name, keyword, as_list=False):
+            tag_container = soup_obj.find(tag_name, {attr_name: keyword})
+            if as_list:
+                tags = tag_container.find_all(tag_name) if tag_container else []
+            else:
+                tags = tag_container
+            return tags
         # salary
         def get_salaryHigh(cardObj):
             salaryHigh = None
-            spanTags = cardObj.find_all('span')
-            salaryHigh_tagsearch = [str(x.contents[1]) for x in spanTags if (x.has_attr('class') and len(x) > 1)]
-            if len(salaryHigh_tagsearch) > 0:
-                salaryHighStr = salaryHigh_tagsearch[0]
-                salaryHigh = int(salaryHighStr.replace(',', '').replace('$', ''))  # 8000 (int)
+            attr_name = 'data-testid'
+            keyword = 'salary-range'
+            tag_spans = get_tags(cardObj, 'span', attr_name, keyword, as_list=True)
+            if tag_spans:
+                dollar_spans = [span for span in tag_spans if '$' in span.get_text()]
+                salaryHighStr = dollar_spans[-1].get_text(strip=True)
+                match = re.search(r'\$([\d,]+)', salaryHighStr)
+                if match:
+                    salaryHigh = int(match.group(1).replace(',', '')) # 8000 type int
             return salaryHigh
 
         # title
         def get_position_title(cardObj):
-            title_keyword = 'job-title'  # unique tag identifier
-            titleHeader = [y for y in cardObj.find_all('span') if title_keyword in str(y)][0]
-            leftbloc = '>'
-            rightbloc = '</span>'
-            titleStr = re.search(leftbloc + '(.*)' + rightbloc, str(titleHeader)).group(1)
+            titleStr = None
+            attr_name = 'data-testid'
+            keyword = 'job-card__job-title'  # unique tag identifier
+            title_tag = get_tags(cardObj, 'span', attr_name, keyword)
+            if title_tag:
+                titleStr = title_tag.get_text(separator=' ', strip=True)
             return titleStr
 
         # posted date
         def get_posted_date(cardObj):
             postedDate = None
-            postedDate_str = ''
-            posted_keyword = 'job-card-date-info'  # unique tag identifier
-
-            def posted_date_tag(section_tag):
-                pd_tag = None
-                if len(section_tag.contents) > 0:
-                    if section_tag.contents[0].has_attr('data-cy'):
-                        cy_tag = section_tag.contents[0]['data-cy']
-                        if cy_tag == posted_keyword:
-                            pd_tag = section_tag
-                return pd_tag
-
-            posted_date_tags = [y for y in cardObj.find_all('section') if posted_date_tag(y) is not None]
-
-            if len(posted_date_tags) > 0:
-                posted_date_tag = posted_date_tags[0]
-                leftbloc = 'data-cy="job-card-date-info">'
-                rightbloc = '</span>'
-                postedStr = re.search(leftbloc + '(.*)' + rightbloc, str(posted_date_tag)).group(1)
-                leftbloc2 = 'Posted '
-                daysStr_1 = re.search(leftbloc2 + '(.*)', postedStr).group(1)
-
-                # convert from x days ago to datetime.date
-                todayDate = dt.datetime.today().date()
-                dayShift = 0
-                if daysStr_1 == 'today':
-                    postedDate = todayDate
-                elif daysStr_1 == 'yesterday':
-                    dayShift = 1
+            postedDate_str = None
+            postedStr = ''
+            attr_name = 'data-cy'
+            keyword = 'job-card-date-info'
+            posted_prefix = 'Posted'
+            posted_tag = get_tags(cardObj, 'span', attr_name, keyword)
+            if posted_tag:
+                postedStr = posted_tag.get_text(strip=True)
+                match = re.search(rf'{posted_prefix} (.*)', postedStr)
+                if match:
+                    daysStr_1 = match.group(1).strip().lower()
                 else:
-                    rightbloc2 = ' days ago'
-                    try:
-                        dayShift = int(re.search('(.*)' + rightbloc2, daysStr_1).group(1))
-                    except:
-                        urlid = get_urlid(cardObj)
-                        print('urlid: %s, original: %s, left filter: %s' % (urlid, postedStr, daysStr_1))
+                    daysStr_1 = 'ERROR'
+                    urlid = get_urlid(cardObj)
+                    print(f'ERROR. Unexpected format for date posted substring: {postedStr}. expecting Posted <> from url {urlid}')
 
-                postedDate = todayDate - dt.timedelta(days=dayShift)
+                if daysStr_1 != 'ERROR':
+                    # convert from x days ago to datetime.date
+                    todayDate = dt.datetime.today().date()
+                    dayShift = 0
+
+                    if daysStr_1 == 'today':
+                        postedDate = todayDate
+                    elif daysStr_1 == 'yesterday':
+                        dayShift = 1
+                    else:
+                        rightbloc2 = ' days ago'
+                        try:
+                            dayShift = int(re.search('(.*)' + rightbloc2, daysStr_1).group(1))
+                        except:
+                            urlid = get_urlid(cardObj)
+                            print('ERROR. problem parsing posted date. urlid: %s, original: %s, left filter: %s' % (urlid, postedStr, daysStr_1))
+
+                    postedDate = todayDate - dt.timedelta(days=dayShift)
 
             if postedDate is not None:
                 postedDate_str = postedDate.strftime('%Y-%m-%d')
@@ -256,24 +262,29 @@ class JobSearchWebsite(object):
 
         # company name
         def get_company_name(cardObj):
-            company_keyword = 'company-hire-info__company'  # unique tag identifier
-            companyP = [y for y in cardObj.find_all('p') if company_keyword in str(y)][0]
-            leftbloc = '>'
-            rightbloc = '</p>'
-            companyStr = re.search(leftbloc + '(.*)' + rightbloc, str(companyP)).group(1)
+            #company_keyword = 'company-hire-info__company'  # unique tag identifier
+            #companyP = [y for y in cardObj.find_all('p') if company_keyword in str(y)][0]
+            #leftbloc = '>'
+            #rightbloc = '</p>'
+            #companyStr = re.search(leftbloc + '(.*)' + rightbloc, str(companyP)).group(1)
+            companyStr = None
+            attr_name = 'data-testid'
+            keyword = 'company-hire-info'
+            company_tag = get_tags(cardObj, 'p', attr_name, keyword)
+            if company_tag:
+                companyStr = company_tag.get_text(separator=' ', strip=True)
             return companyStr
 
         # url id
         def get_urlid(cardObj):
-            url_keyword = 'href'  # unique tag identifier
-            urlA = str([y[url_keyword] for y in cardObj.find_all('a') if url_keyword in str(y)][0])
-            url_modifier = '?'
-            if url_modifier in urlA:
-                prjidStr = urlA[:urlA.find(url_modifier)]
-            else:
-                prjidStr = urlA
-            #drop /job/ if present
-            prjidStr = prjidStr.replace('/job/', '')
+            prjidStr = None
+            link_tag = cardObj.find('a', href=True)
+            if link_tag:
+                href = link_tag['href']
+                # strip out query string
+                prjidStr = href.split('?', 1)[0]
+                # drop /job/ if present
+                prjidStr = prjidStr.replace('/job/', '')
             return prjidStr
 
         # job id
@@ -284,11 +295,11 @@ class JobSearchWebsite(object):
             return jobid
 
         jobRecord = {}
-        jobRecord['salaryHigh'] = get_salaryHigh(cardObj) #2022-11-12 19:40
-        jobRecord['position_title'] = get_position_title(cardObj) #2022-11-12 19:42
-        jobRecord['posted_date'] = get_posted_date(cardObj) #2022-11-12 19:44
-        jobRecord['company_name'] = get_company_name(cardObj) #2022-11-12 19:46
-        jobRecord['urlid'] = get_urlid(cardObj) #2022-11-12 19:47
+        jobRecord['salaryHigh'] = get_salaryHigh(cardObj) #2025-05-01 15:31
+        jobRecord['position_title'] = get_position_title(cardObj) #2025-05-01 16:02
+        jobRecord['posted_date'] = get_posted_date(cardObj) #2025-05-01 16:28
+        jobRecord['company_name'] = get_company_name(cardObj) #2025-05-01 16:48
+        jobRecord['urlid'] = get_urlid(cardObj) #2025-05-01 16:53
         jobRecord['source'] = self.name
         jobRecord['jobid'] = get_jobid(jobRecord)
         jobRecord['src_methodid'] = 0 # web scraping

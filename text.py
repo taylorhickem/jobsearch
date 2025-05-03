@@ -168,7 +168,7 @@ def add_clean_deranked_titles(profiles):
 
 def get_bigram_matrix(titles):
     vect = CountVectorizer(min_df=5, ngram_range=(2, 2), analyzer='word').fit(titles)
-    feature_names = np.array(vect.get_feature_names())
+    feature_names = np.array(vect.get_feature_names_out())
     X_v = vect.transform(titles)
     return (feature_names, X_v)
 

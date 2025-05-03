@@ -12,11 +12,11 @@ profiles = None
 mainURL = ''
 FIELD_CONFIG = {
     'mcf_ref': {'tag_class': 'span',
-               'html_keyword': 'jobinfo__jobpostid',
+               'html_keyword': 'job-details-info-job-post-id',
                'drop_chr': '',
                'type': 'string'},
     'closing_date': {'tag_class': 'span',
-               'html_keyword': 'expiry_date',
+               'html_keyword': 'job-details-info-job-expiry-date',
                'drop_chr': 'Closing on ',
                 'datetime_format': '%d %b %Y',
                'type': 'date'},
@@ -25,11 +25,11 @@ FIELD_CONFIG = {
                'drop_chr': '',
                'type': 'str'},
     'applicants': {'tag_class': 'span',
-               'html_keyword': 'num_of_applications',
+               'html_keyword': 'job-details-info-num-of-applications',
                'drop_chr': ' application',
                'type': 'int'},
     'industry_classification': {'tag_class': 'p',
-               'html_keyword': 'job-categories',
+               'html_keyword': 'job-details-info-job-categories',
                'drop_chr': '',
                'type': 'string'},
     'description':{'tag_class': 'div',
@@ -121,20 +121,18 @@ def get_profileRecord(urlid, jobid='', mainURL=None):
         return fieldValue
 
     #extract fields
-    mcf_ref = get_profile_fieldValue('mcf_ref')
-    closing_date = get_profile_fieldValue('closing_date')
-    yrsexpStr = get_profile_fieldValue('years_experience')
-    applicantsInt = get_profile_fieldValue('applicants')
-    industry_classification = get_profile_fieldValue('industry_classification')
+    mcf_ref = get_profile_fieldValue('mcf_ref') #2025-05-01 17:03 
+    closing_date = get_profile_fieldValue('closing_date') #2025-05-01 17:11
+    applicantsInt = get_profile_fieldValue('applicants') #2025-05-01 17:21
+    industry_classification = get_profile_fieldValue('industry_classification') #2025-05-01 17:26
 
     #years of experience (int) plural and singular case
-    if not yrsexpStr is None:
-        yrsexpInt = int(yrsexpStr.replace(' year exp', '').replace(' years exp', ''))
-    else:
-        yrsexpInt = None
+    #yrsexpStr = get_profile_fieldValue('years_experience')
+    #yrsexpInt = int(yrsexpStr.replace(' year exp', '').replace(' years exp', '')) if yrsexpStr else None
+    yrsexpInt = None # deprecated
 
     #description (string)
-    fldcfg = FIELD_CONFIG['description']
+    fldcfg = FIELD_CONFIG['description']  #2025-05-01 17:52
     desStr = get_tag_element(pageSoup, fldcfg['tag_class'],
                                fldcfg['html_keyword'],
                                fldcfg['drop_chr'],

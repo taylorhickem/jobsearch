@@ -15,6 +15,7 @@ import report
 #----------------------------------------------------
 TODAY_DATE = ''
 TITLE_SCORE_BATCH = 500
+SALARY_PCT_DEFAULT = 0
 profiles = None
 matches = None
 screened = None
@@ -59,25 +60,26 @@ def load_job_profiles():
     profiles = pd.merge(profiles, jobs, on='jobid')
     #convert date format to datetime.date
     profiles['closing_date'] = profiles['closing_date'].apply(lambda x: x.date())
-    ics = get_ics('focus')
-    subsets = []
-    for ic in ics:
-        subset = get_profiles_by_ic(profiles, ic)
-        ss_wo_salary = subset[pd.isnull(subset.salaryHigh)].copy()
-        if len(ss_wo_salary) > 0:
-            ss_w_salary = subset[not pd.isnull(subset.salaryHigh)].copy()
-            if len(ss_w_salary) > 0:
-                ss_w_salary['salary_pct'] = ss_w_salary.salaryHigh.rank(pct=True)
-                ss_w_salary['ic'] = ic
-                subsets.append(ss_w_salary)
-            ss_wo_salary['ic'] = ic
-            subsets.append(ss_wo_salary)
-        else:
-            subset['salary_pct'] = subset.salaryHigh.rank(pct=True)
-            subset['ic'] = ic
-            subsets.append(subset)
-
-    profiles = pd.concat(subsets)
+    #ics = get_ics('focus')
+    #subsets = []
+    #for ic in ics:
+    #    subset = get_profiles_by_ic(profiles, ic)
+    #    ss_wo_salary = subset[pd.isnull(subset.salaryHigh)].copy()
+    #    if len(ss_wo_salary) > 0:
+    #        ss_w_salary = subset[not pd.isnull(subset.salaryHigh)].copy()
+    #        if len(ss_w_salary) > 0:
+    #            ss_w_salary['salary_pct'] = ss_w_salary.salaryHigh.rank(pct=True)
+    #            ss_w_salary['ic'] = ic
+    #            subsets.append(ss_w_salary)
+    #        ss_wo_salary['ic'] = ic
+    #        subsets.append(ss_wo_salary)
+    #    else:
+    #        subset['salary_pct'] = subset.salaryHigh.rank(pct=True)
+    #        subset['ic'] = ic
+    #        subsets.append(subset)
+    #
+    #profiles = pd.concat(subsets)
+    profiles['salary_pct'] = SALARY_PCT_DEFAULT
     profiles.drop_duplicates(subset=['jobid'], inplace=True)
     profiles.set_index('jobid', inplace=True)
 
@@ -107,9 +109,11 @@ def screen_jobs():
     #03 store the match_auto score in the sqlite match table
     update_matches()
 
-    #04 drop the jobs below min match score, filter for most recent posts
-    #05 push update to gsheet
-    update_screened()
+    if profiles is not None:
+        if len(profiles) > 0:
+            #04 drop the jobs below min match score, filter for most recent posts
+            #05 push update to gsheet
+            update_screened()
 
 
 def get_match_report():
@@ -130,8 +134,10 @@ def update_matches():
     #fields to keep : jobid, clean_title, match_auto
     fields = ['jobid', 'clean_title', 'match_auto']
     score_positions()
-    matches = profiles.reset_index()[fields].copy()
-    db.update_match(matches)
+    if profiles is not None:
+        if len(profiles) > 0:
+            matches = profiles.reset_index()[fields].copy()
+            db.update_match(matches)
 
 
 def get_match_score_range():
@@ -150,8 +156,10 @@ def score_positions():
     '''
     global profiles
     score_profile_title()
-    profiles['match_auto'] = profiles.apply(
-        lambda x: match_score(x['salary_pct'], x['title_score']), axis=1)
+    if profiles is not None:
+        if len(profiles) > 0:
+            profiles['match_auto'] = profiles.apply(
+                lambda x: match_score(x['salary_pct'], x['title_score']), axis=1)
 
 
 def match_score(pct, title_score):
@@ -176,7 +184,10 @@ def score_profile_title(unscored=None):
         load_job_profiles()
         unscored = profiles.copy()
         profile_count = len(unscored)
-        if profile_count <= TITLE_SCORE_BATCH:
+        if profile_count == 0:
+            print(f'WARNING: no job profiles to score.')
+            scored = unscored.copy()
+        elif profile_count <= TITLE_SCORE_BATCH:
             scored = score_profile_title(unscored)
         else:
             batch_ids = [i//TITLE_SCORE_BATCH
@@ -227,7 +238,7 @@ def update_screened():
     screened = profiles.reset_index()[[x for x in fields if not x == 'week']]
     screened.fillna(0, inplace=True)
     screened = add_weeks(screened)
-    recent = screened[screened['week'] <= weeks].copy()
+    recent = screened[(screened['week'] <= weeks) & (screened['closing_date'] != 0)].copy()
     recent = recent[recent['closing_date'] >= TODAY_DATE].copy()
     keep = recent[(recent.match_auto >= match_score_min) | (recent.src_methodid == 1)]
     screened = keep[fields].sort_values(['week', 'match_auto'], ascending=(True, False))
