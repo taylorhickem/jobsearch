@@ -3,6 +3,7 @@
 *.lnk
 *.db
 *.sqlite3
+*.csv
 __pycache__
 env
 venv

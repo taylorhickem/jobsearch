@@ -9,7 +9,7 @@ import database as db
 #----------------------------------------------------
 #Static variables
 #----------------------------------------------------
-
+MIN_DF = 5
 tag_sheets = {}
 tag_tbls = {}
 
@@ -167,7 +167,18 @@ def add_clean_deranked_titles(profiles):
     return profiles
 
 def get_bigram_matrix(titles):
-    vect = CountVectorizer(min_df=5, ngram_range=(2, 2), analyzer='word').fit(titles)
+    n_categories = len(set(titles))
+    n_rows = len(titles)
+    try:
+        vect = CountVectorizer(min_df=MIN_DF, ngram_range=(2, 2), analyzer='word').fit(titles)
+    except:
+        print(f'WARNING. small dataset: {n_rows} rows and {n_categories} unique values. Reducing minimum document frequency setting from {MIN_DF} to 1.')
+        try:
+            vect = CountVectorizer(min_df=1, ngram_range=(2, 2), analyzer='word').fit(titles)
+        except Exception as e:
+            if 'pruning' in str(e):
+                print(f'ERROR. dataset too small. Data contains {n_rows} rows and {n_categories} unique values.')
+            raise e
     feature_names = np.array(vect.get_feature_names_out())
     X_v = vect.transform(titles)
     return (feature_names, X_v)
