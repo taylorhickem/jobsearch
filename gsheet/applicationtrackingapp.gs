@@ -321,6 +321,72 @@ function updateKeywordLib() {
   }
 }
 
+function recordTrackAssignments() {
+  const srcSheet = ss.getSheetByName("track_un");
+  const dstSheet = ss.getSheetByName("track_assignment");
+
+  const srcRange = srcSheet.getRange("A2:B" + srcSheet.getLastRow());
+  const srcValues = srcRange.getValues();
+
+  const toAppend = [];
+
+  for (let i = 0; i < srcValues.length; i++) {
+    const jobid = srcValues[i][0];
+    const track_id = srcValues[i][1];
+
+    // Skip rows with blank track_id
+    if (track_id !== "") {
+      toAppend.push([jobid, track_id]);
+    }
+  }
+  if (toAppend.length > 0) {
+    const dstLastRow = lastNonEmptyRow(dstSheet);
+    dstSheet.getRange("A1").offset(dstLastRow, 0, toAppend.length, 2).setValues(toAppend);
+
+    // clear assignments from source
+    srcRange.offset(0,1,toAppend.length,1).clearContent()
+  } 
+}
+
+function clearApplyInProcess() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const screened = ss.getSheetByName("screened");
+  const applySheet = ss.getSheetByName("apply_results");
+
+  // Step 1: Build a set of jobids to KEEP from screened
+  const screenedData = screened.getRange("E2:W" + screened.getLastRow()).getValues();
+  const jobidsToKeep = new Set();
+
+  screenedData.forEach(row => {
+    const jobid = row[0];        // Column E (jobid)
+    const apply = row[13];       // Column R (apply)
+    const closed = row[18];      // Column W (closed)
+
+    if (apply !== 1 && closed === 0) {
+      jobidsToKeep.add(jobid);
+    }
+  });
+
+  Logger.log(`Jobids to keep: ${[...jobidsToKeep].join(", ")}`);
+
+  // Step 2: Filter apply_results for only those jobids
+  const lastRow = applySheet.getLastRow();
+  const dataRange = applySheet.getRange("A2:D" + lastRow);
+  const data = dataRange.getValues();
+
+  const retainedRows = data.filter(row => jobidsToKeep.has(row[0]));
+
+  // Step 3: Clear and rewrite
+  dataRange.clearContent();
+
+  if (retainedRows.length > 0) {
+    applySheet.getRange(2, 1, retainedRows.length, 4).setValues(retainedRows);
+    Logger.log(`apply_results updated with ${retainedRows.length} retained rows.`);
+  } else {
+    Logger.log("apply_results fully cleared (no retained rows).");
+  }
+}
+
 function getColumn(array2D,col_index){
   // selects column i and returns as a 1D array (list)
   var array1D = Array();
