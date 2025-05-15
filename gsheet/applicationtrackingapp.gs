@@ -16,6 +16,7 @@ function onOpen() {
   ui.createMenu('JobsearchApp')
       .addItem('Close leads','closeLeads')
       .addItem('Record applications','recordApplications')
+      .addItem('Record track assignments','recordTrackAssignments')
       .addItem('record KPIs','recordKPIs')
       .addToUi();
 }
@@ -76,6 +77,10 @@ function closeLeads() {
 }
 
 function recordApplications() {
+
+  // update selections with application results
+  selectApplySuccess()
+
   var Napplyfields = 13
   var Nscreened = screened_sht.getLastRow()-1;
   var Nscreenfields = ss.getRangeByName("screened_data_hdr").getNumColumns();  
@@ -114,6 +119,9 @@ function recordApplications() {
   if (applyRows.length > 0) {
     open_sht.getRange(Nopen + 1, 1, applyRows.length, Napplyfields).setValues(applyRows);
   }  
+
+  // clear jobs that are no longer in-process
+  clearApplyInProcess()
 }
 
 
@@ -321,6 +329,7 @@ function updateKeywordLib() {
   }
 }
 
+
 function recordTrackAssignments() {
   const srcSheet = ss.getSheetByName("track_un");
   const dstSheet = ss.getSheetByName("track_assignment");
@@ -348,13 +357,47 @@ function recordTrackAssignments() {
   } 
 }
 
+function selectApplySuccess() {
+  const applySheet = ss.getSheetByName("apply_results");
+  const screened = ss.getSheetByName("screened");
+
+  // Step 1: Collect jobids with apply_status = 1 from apply_results
+  const resultsData = applySheet.getRange("A2:B" + lastNonEmptyRow(applySheet)).getValues();
+  const jobidsSuccess = new Set();
+
+  resultsData.forEach(row => {
+    const jobid = row[0];
+    const apply_status = row[1];
+    if (apply_status === 1) {
+      jobidsSuccess.add(jobid);
+    }
+  });
+
+  Logger.log(`Identified ${jobidsSuccess.size} jobid(s) with apply_status = 1`);
+  // Logger.log([...jobidsSuccess].join("\n"));
+
+  // Step 2: Update apply (col R) in screened
+  const screenedRange = screened.getRange("E2:R" + lastNonEmptyRow(screened));
+  const screenedData = screenedRange.getValues();
+
+  for (let i = 0; i < screenedData.length; i++) {
+    const jobid = screenedData[i][0];   // Col E
+    const shouldApply = jobidsSuccess.has(jobid);
+    screenedData[i][13] = shouldApply ? 1 : "";  // Col R = index 13
+  }
+
+  // Write back the updated apply column (col R)
+  const applyUpdateRange = screened.getRange("R2:R" + (screenedData.length + 1));
+  const updatedApplyColumn = screenedData.map(row => [row[13]]);
+  applyUpdateRange.setValues(updatedApplyColumn);
+}
+
 function clearApplyInProcess() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
   const screened = ss.getSheetByName("screened");
   const applySheet = ss.getSheetByName("apply_results");
 
   // Step 1: Build a set of jobids to KEEP from screened
-  const screenedData = screened.getRange("E2:W" + screened.getLastRow()).getValues();
+  const screenedData = screened.getRange("E2:W" + lastNonEmptyRow(screened)).getValues();
   const jobidsToKeep = new Set();
 
   screenedData.forEach(row => {
@@ -367,20 +410,21 @@ function clearApplyInProcess() {
     }
   });
 
-  Logger.log(`Jobids to keep: ${[...jobidsToKeep].join(", ")}`);
+  Logger.log(`found ${jobidsToKeep.size} jobids to keep from screened`);
 
   // Step 2: Filter apply_results for only those jobids
-  const lastRow = applySheet.getLastRow();
-  const dataRange = applySheet.getRange("A2:D" + lastRow);
+  const dataRange = applySheet.getRange("A2:D" + lastNonEmptyRow(applySheet));
   const data = dataRange.getValues();
-
   const retainedRows = data.filter(row => jobidsToKeep.has(row[0]));
+
+  Logger.log(`keep in process rows:`);
+  Logger.log(retainedRows);
 
   // Step 3: Clear and rewrite
   dataRange.clearContent();
 
   if (retainedRows.length > 0) {
-    applySheet.getRange(2, 1, retainedRows.length, 4).setValues(retainedRows);
+    applySheet.getRange("A2").offset(0, 0, retainedRows.length, 4).setValues(retainedRows);
     Logger.log(`apply_results updated with ${retainedRows.length} retained rows.`);
   } else {
     Logger.log("apply_results fully cleared (no retained rows).");

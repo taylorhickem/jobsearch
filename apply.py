@@ -15,15 +15,28 @@ process steps
 # dependencies -----------------------------------------------
 import json
 from playwright.sync_api import sync_playwright
+import pandas as pd
+import database as db
 
 
 # constants -----------------------------------------------
 JOB_SITE = 'MyCareerFutures'
 USER_PROFILE_DEFAULT_PATH = r'C:\Users\taylo\AppData\Local\Google\Chrome\User Data'
-JOB_URL_SAMPLE = 'https://www.mycareersfuture.gov.sg/job/consulting/senior-aws-data-engineer-palo-singapore-ca097a53f5888a49e7a8995ae322b35e'
+JOB_URL_SAMPLE = 'https://www.mycareersfuture.gov.sg/job/information-technology/data-engineer-singapore-geco-asia-3db999d67abd067752ad5eb59330e1d7'
+#JOB_URL_SAMPLE = 'https://www.mycareersfuture.gov.sg/job/information-technology/data-engineer-dna-infotech-0a5a1235196f5385595c3d6b85e8a95c'
+#JOB_URL_SAMPLE = 'https://www.mycareersfuture.gov.sg/job/information-technology/data-engineer-apar-technologies-a1d1c92309fabdaf66601ecce3cdf09b'
+#JOB_URL_SAMPLE = 'https://www.mycareersfuture.gov.sg/job/information-technology/gen-ai-enterprise-architect-joule-sap-asia-409337eab78651a131dca55afbd609dd'
 JOB_SLUG_SAMPLE = '/information-technology/data-engineer-python-ci-cd-devops-data-fabric-randstad-042ff768f5bf95bbceca4ac9936510d2'
 COOKIES_JSON_FILE = 'cookies_mcf.json'
-LOGGING_LEVEL = 0
+LOGGING_LEVEL = 1
+BROWSER_HEADLESS = True
+TO_APPLY_GSHEET = 'apply_in_process'
+RESULTS_GSHEET = 'apply_results'
+TO_APPLY_FIELDS = [
+    'jobid',
+    'url',
+    'cv_version'
+]
 
 SITE_ELEMENTS = [
     {
@@ -36,6 +49,11 @@ SITE_ELEMENTS = [
                 'element': 'apply_button',
                 'button_selector': 'button#job-details-apply-button',
                 'click_delay_sec': 1000
+            },
+            {
+                'page': 'job_post',
+                'element': 'apply_message',
+                'message_selector': 'p[data-testid="job-apply-error"]'
             },
             {
                 'page': 'job_apply',
@@ -73,7 +91,7 @@ class ChromeBrowser(object):
     cookies_json_file = COOKIES_JSON_FILE
     cookie_domain = ''
     config = {
-        'headless': False
+        'headless': BROWSER_HEADLESS
     }
     def __init__(self, browser_config={}, **kwargs):
         for k in browser_config:
@@ -155,8 +173,10 @@ class ChromeBrowser(object):
                     self._exception_handle(msg=cookie_fail_msg)
         except Exception as e:
             self._exception_handle(msg=connect_fail_msg, exception=e)            
-        connect_success = self.session is not None and cookies_loaded
-        print(f'connect success? {connect_success}')
+        connect_success = self.session is not None and cookies_loaded        
+        if LOGGING_LEVEL < 2:
+            con_success_str = 'success' if connect_success else 'failed'
+            print(f'INFO. browser connected? {con_success_str}')
         if not connect_success:
             self._exception_handle(msg=connect_fail_msg)
         return connect_success 
@@ -223,18 +243,49 @@ class MCFSiteBrowser(ChromeBrowser):
         return success, errors
 
     def apply_start(self):
-        success = True
+        success = False
+        apply_status = ''
         errors = ''
+
         try:
             page_element = self.get_page_element('job_post', 'apply_button')
             apply_selector = page_element.get('button_selector', '')
-            click_delay_sec = page_element.get('click_delay_sec', '')
-            self.page.click(apply_selector)
-            self.page.wait_for_timeout(click_delay_sec)
+            submit_locator = self.page.locator(apply_selector)
+
+            # Case 1: Apply button is present → proceed with click
+            if submit_locator and submit_locator.is_enabled():
+                click_delay_sec = page_element.get('click_delay_sec', '')
+                success = True
+                apply_status = '01_applied'
+                self.page.click(apply_selector)
+                self.page.wait_for_timeout(click_delay_sec)
+            else:
+                # Case 2: Apply button not found — check page content for closed or already applied
+                apply_msg_text = ''
+                page_element = self.get_page_element('job_post', 'apply_message')
+                message_selector = page_element.get('message_selector', '')
+                apply_msg_locator = self.page.locator(message_selector)
+                if apply_msg_locator:
+                    apply_msg_text = apply_msg_locator.inner_text().lower()
+
+                if 'already' in apply_msg_text or 'applied' in apply_msg_text:
+                    #message: "you have already applied for this job"
+                    success = True
+                    apply_status = '01_applied'
+                    errors = 'INFO. Job already applied.'
+                elif 'closed' in apply_msg_text or 'no longer' in apply_msg_text:
+                    # message: "applications have closed for this job"
+                    apply_status = '07_post_closed'
+                    errors = 'INFO. Application has closed.'
+                else:
+                    apply_status = '04_not_open_to_apply'
+                    errors = 'WARNING. Apply button not found and no matching message detected.'
+
         except Exception as e:
-            success = False
-            errors = f'ERROR. failed to start application. {e}'
-        return success, errors
+            apply_status = '04_not_open_to_apply'
+            errors = f'ERROR. Exception occurred while starting application: {e}'
+
+        return success, apply_status, errors
 
     def apply_submit(self):
         success = True
@@ -278,7 +329,7 @@ class MCFSiteBrowser(ChromeBrowser):
                         select_errors = f'ERROR. failed to locate and select the radio button for cv {cv_version}. {e}'
                     break
             if not select_success:
-                select_errors = f'ERROR. cv {cv_version} not found among options {cv_options}. {e}'
+                select_errors = f'ERROR. cv {cv_version} not found among options {cv_options}.'
 
         if select_success:
             select_success, select_errors = self.apply_page_advance()
@@ -289,17 +340,18 @@ class MCFSiteBrowser(ChromeBrowser):
 # module variables ----------------------------------------
 browser = None
 apply_results = []
-jobs_to_apply = [
-    {
-        'jobid': 'MyCareerFutures-ca097a53f5888a49e7a8995ae322b35e-2025-05-06',
-        'slug': '',
-        'url': JOB_URL_SAMPLE,
-        'cv_version': '11.4',
-        'success': False,
-        'apply_status': '',
-        'errors': ''
-    }
-]
+jobs_to_apply = []
+#jobs_to_apply = [
+#    {
+#        'jobid': 'MyCareerFutures-3db999d67abd067752ad5eb59330e1d7-2025-05-14',
+#        'slug': '',
+#        'url': JOB_URL_SAMPLE,
+#        'cv_version': '11.4',
+#        'success': False,
+#        'apply_status': '',
+#        'errors': ''
+#    }
+#]
 
 
 def get_pwcookies(cookies_json_file):
@@ -358,34 +410,83 @@ def run():
             ex_msg = browser.errors if browser is not None else ''
             print(f'ERROR. Exception encountered during browswer session. {ex_msg}. {e}')
     else:
-        if to_apply_success and no_jobs == 0:
-            print(f'INFO. no jobs to apply.')
+        if to_apply_success:
+            if LOGGING_LEVEL < 2:
+                print(f'INFO. no jobs to apply.')
         else:
             print(f'ERROR. failed to fetch job posts to apply from google sheets. {to_apply_errors}')
 
-    results_success = False
-    results_errors = ''
+    post_success = False
+    post_errors = ''
     if apply_success:
         if LOGGING_LEVEL == 0:
             print(f'jobs applied results: {apply_results}')
-        results_success, results_errors = results_post()
+        post_success, post_errors = results_post()
     elif apply_errors:
         print(f'ERROR. problem applying for jobs. {apply_errors}')
-    if results_success:
+    if post_success:
         if LOGGING_LEVEL == 0:
             print(f'INFO. posted results to google sheets.')
-    else:
-        if results_errors:
-            print(f'ERROR. failed to post results to Google Sheets. {results_errors}')
+    if post_errors:
+        print(f'ERROR. failed to post results to Google Sheets. {post_errors}')
 
 
 def fetch_jobs_to_apply():
+    global jobs_to_apply, apply_results
     fetch_success = True
     fetch_errors = ''
     if LOGGING_LEVEL == 0:
         print(f'INFO. fetching jobs to apply from google sheets ...')
-    print(f'WARNING: future feature to develop - fetch jobs to apply from google sheet')
+
+    try:
+        db.load()
+        in_process = db.get_sheet(TO_APPLY_GSHEET)
+    except Exception as e:
+        fetch_success = False
+        extra_info = 'blank column in google sheet. consider adding empty string to errors' if 'passed, passed' in str(e) else ''
+        fetch_errors = f'ERROR. problem fetching jobs to apply from google sheet {TO_APPLY_GSHEET}. {extra_info} {e}'
+    else:
+        if LOGGING_LEVEL == 0:
+            print(f'INFO. fetched google sheet {TO_APPLY_GSHEET}. processing jobs from table ...')
+        to_apply_unvalidated = in_process.to_dict(orient='records')
+        to_apply_count = len(to_apply_unvalidated)
+
+    if fetch_success:
+        if to_apply_count > 0:
+            if LOGGING_LEVEL == 0:
+                print(f'INFO. found {to_apply_count} job{"s" if to_apply_count > 1 else ""} from google sheet {TO_APPLY_GSHEET}')
+            for j in to_apply_unvalidated:
+                is_valid, apply_result = to_apply_validation(j)
+                if is_valid:
+                    jobs_to_apply.append(j)
+                else:
+                    if LOGGING_LEVEL < 2:
+                        print(f'WARNING. invalid job input {apply_result}. skipping job.')
+                    apply_results.append(apply_result)
+        else:
+            fetch_errors = 'INFO. no jobs to apply found from google sheet.'
+
     return fetch_success, fetch_errors
+
+
+def to_apply_validation(job_config):
+    is_valid = True
+    validation_errors = []
+    apply_result = {}
+    for f in TO_APPLY_FIELDS:
+        non_null = True if job_config.get(f, '') else False
+        if not non_null:
+            validation_errors.append(f'empty field {f}')
+        is_valid = non_null if is_valid else is_valid        
+
+    if not is_valid:
+        apply_result = {
+            'jobid': job_config.get('jobid', '*'),
+            'applied': 0,
+            'apply_result': '91_invalid_input',
+            'errors': ','.join(validation_errors)
+        }
+    return is_valid, apply_result
 
 
 def site_load():
@@ -395,7 +496,7 @@ def site_load():
     load_success = browser.page_refresh()
     if load_success:
         try:
-            print(f'loading homepage {browser.homepage} ...')
+            print(f'INFO. loading homepage {browser.homepage} ...')
             browser.homepage_load()
             #browser.page.screenshot(path="auth_check.png")
         except Exception as e:
@@ -410,9 +511,15 @@ def jobs_apply():
     global apply_results
     apply_success = True
     apply_errors = ''
-    for j in jobs_to_apply:
-        apply_result = apply_job(j)
-        apply_results.append(apply_result)
+    job_count = len(jobs_to_apply)
+    if job_count > 0:
+        if LOGGING_LEVEL < 2:
+            print(f'INFO. attempting to apply for {job_count} job{"s" if job_count>1 else ""} ...')
+        for j in jobs_to_apply:
+            apply_result = apply_job(j)
+            apply_results.append(apply_result)
+    else:
+        apply_errors = 'INFO. no jobs to apply'        
     return apply_success, apply_errors
 
 
@@ -425,11 +532,8 @@ def apply_job(job_config):
     url = job_config.get('url', '')
     cv_version = job_config.get('cv_version', '')
 
-    if LOGGING_LEVEL < 2:
-        print(f'INFO. applying to job {jobid}')
-
     if LOGGING_LEVEL == 0:
-        print(f'INFO. {jobid}: navigating to job post {slug} ...')
+        print(f'INFO. applying to job {jobid} slug: {slug} url: {url} ')
 
     try:
         browser.page_load(slug=slug, url=url)
@@ -441,11 +545,9 @@ def apply_job(job_config):
     if apply_success:
         if LOGGING_LEVEL == 0:
             print(f'INFO. starting application ...')
-        apply_success, errors = browser.apply_start()
-        if not apply_success:
-            apply_status = '04_not_open_to_apply'
+        apply_success, apply_status, errors = browser.apply_start()
 
-    if apply_success:
+    if apply_success and not errors:
         if LOGGING_LEVEL == 0:
             print(f'attempting cv select ...')
         apply_success, errors = browser.cv_select(cv_version)
@@ -455,31 +557,61 @@ def apply_job(job_config):
             else:
                 apply_status = '03_cv_selector_error'
 
-    if apply_success:
+    if apply_success and not errors:
         if LOGGING_LEVEL == 0:
             print(f'cv {cv_version} selected.')
-        print(f'attempting apply submit ...')
+            print(f'attempting apply submit ...')
         apply_success, errors = browser.apply_submit()
         if not apply_success:            
             apply_status = '02_questionnaire'
             errors = f'ERROR. failed to complete job application process. Assuming questionnaire required. {errors}'
         
-    apply_result = job_config.copy()
-    apply_result['success'] = apply_success
-    apply_result['apply_status'] = apply_status
-    apply_result['errors'] = errors
+    apply_result = {
+        'jobid': jobid,
+        'applied': 1 if apply_success else 0,
+        'apply_result': apply_status,
+        'errors': errors
+    }
+    if LOGGING_LEVEL < 2:
+        success_str = 'success' if apply_success else 'failed'
+        print(f'INFO. apply results: {success_str}, status:{apply_status}, jobid:{jobid}  {errors}')
     if LOGGING_LEVEL == 0:
-        print(f'apply results for job {jobid}: {apply_result}')
+        print(f'INFO. full results: {apply_result}')
     return apply_result
 
 
 def results_post():
-    results_success = True
-    results_errors = ''
-    if LOGGING_LEVEL == 0:
-        print(f'INFO. posting jobs applied results to google sheets ...')
-    print(f'WARNING: future feature to develop - post jobs applied results to google sheet')
-    return results_success, results_errors
+    post_success = True
+    post_errors = ''
+    if apply_results:
+        if LOGGING_LEVEL == 0:
+            print(f'INFO. posting jobs applied results to google sheet {RESULTS_GSHEET} ...')
+        try:
+            db.load()
+            prior_results = db.get_sheet(RESULTS_GSHEET).set_index('jobid')
+        except Exception as e:
+            post_success = False
+            extra_info = 'blank column in google sheet. consider adding empty string to errors' if 'passed, passed' in str(e) else ''
+            post_errors = f'ERROR. problem fetching current results from google sheet {RESULTS_GSHEET}. {extra_info} {e}'
+ 
+        if post_success:
+            try:
+                new_results = pd.DataFrame.from_records(apply_results).set_index('jobid')
+                new_results['errors'].fillna(' ', inplace=True)
+                post_results = new_results.combine_first(prior_results).reset_index()
+            except Exception as e:
+                post_success = False
+                post_errors = f'ERROR. problem converting results into pandas DataFrame and merging with existing results. {e}'
+
+        if post_success:
+            try:
+                db.post_to_gsheet(post_results, RESULTS_GSHEET, input_option='USER_ENTERED')
+            except Exception as e:
+                post_success = False
+                post_errors = f'ERROR. problem posting updated results to google sheet {RESULTS_GSHEET}. {e}'
+    else:
+        post_errors = 'INFO. no results to post.'
+    return post_success, post_errors
 
 
 if __name__ == '__main__':
