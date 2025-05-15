@@ -48,7 +48,7 @@ SITE_ELEMENTS = [
                 'page': 'job_post',
                 'element': 'apply_button',
                 'button_selector': 'button#job-details-apply-button',
-                'click_delay_sec': 1000
+                'click_delay_sec': 500
             },
             {
                 'page': 'job_post',
@@ -59,7 +59,7 @@ SITE_ELEMENTS = [
                 'page': 'job_apply',
                 'element': 'page_advance',
                 'button_locator': 'button#application-details-save-button',
-                'click_delay_sec': 1000
+                'click_delay_sec': 500
             },
             {
                 'page': 'cv_select',
@@ -250,10 +250,11 @@ class MCFSiteBrowser(ChromeBrowser):
         try:
             page_element = self.get_page_element('job_post', 'apply_button')
             apply_selector = page_element.get('button_selector', '')
+            self.page.wait_for_selector(apply_selector, timeout=5000)
             submit_locator = self.page.locator(apply_selector)
 
             # Case 1: Apply button is present → proceed with click
-            if submit_locator and submit_locator.is_enabled():
+            if submit_locator.is_visible() and submit_locator.is_enabled():
                 click_delay_sec = page_element.get('click_delay_sec', '')
                 success = True
                 apply_status = '01_applied'
@@ -292,8 +293,14 @@ class MCFSiteBrowser(ChromeBrowser):
         errors = ''
         try:
             page_element = self.get_page_element('apply_review', 'submit')
-            submit_locator = page_element.get('button_locator', '')
-            self.page.locator(submit_locator).click()
+            submit_selector = page_element.get('button_locator', '')
+            self.page.wait_for_selector(submit_selector, timeout=3000)
+            submit_locator = self.page.locator(submit_selector)
+            if submit_locator.is_visible() and submit_locator.is_enabled():
+                submit_locator.click()
+            else:
+                success = False
+                errors = 'ERROR. Submit button present but not clickable.'
         except Exception as e:
             success = False
             errors = f'ERROR. failed to start application. {e}'
@@ -304,8 +311,9 @@ class MCFSiteBrowser(ChromeBrowser):
         select_errors = ''
         try:
             cards_element = self.get_page_element('cv_select', 'cv_cards')
-            cards_locator = cards_element.get('element_locator', '')
-            cv_cards = self.page.locator(cards_locator)
+            cards_selector = cards_element.get('element_locator', '')
+            self.page.wait_for_selector(cards_selector, timeout=3000)
+            cv_cards = self.page.locator(cards_selector)
         except Exception as e:
             select_success = False
             select_errors = f'ERROR. failed to locate cv cards on page. {e}'
