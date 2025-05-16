@@ -30,6 +30,9 @@ JOB_SLUG_SAMPLE = '/information-technology/data-engineer-python-ci-cd-devops-dat
 COOKIES_JSON_FILE = 'cookies_mcf.json'
 LOGGING_LEVEL = 1
 BROWSER_HEADLESS = True
+MAX_RETRY = 5
+PAGE_DELAY_MS = 500
+RETRY_DELAY_MS = 5000
 TO_APPLY_GSHEET = 'apply_in_process'
 RESULTS_GSHEET = 'apply_results'
 TO_APPLY_FIELDS = [
@@ -48,7 +51,7 @@ SITE_ELEMENTS = [
                 'page': 'job_post',
                 'element': 'apply_button',
                 'button_selector': 'button#job-details-apply-button',
-                'click_delay_sec': 500
+                'click_delay_ms': PAGE_DELAY_MS
             },
             {
                 'page': 'job_post',
@@ -59,7 +62,7 @@ SITE_ELEMENTS = [
                 'page': 'job_apply',
                 'element': 'page_advance',
                 'button_locator': 'button#application-details-save-button',
-                'click_delay_sec': 500
+                'click_delay_ms': PAGE_DELAY_MS
             },
             {
                 'page': 'cv_select',
@@ -234,9 +237,9 @@ class MCFSiteBrowser(ChromeBrowser):
         try:
             page_element = self.get_page_element('job_apply', 'page_advance')
             advance_locator = page_element.get('button_locator', '')
-            click_delay_sec = page_element.get('click_delay_sec', '')
+            click_delay_ms = page_element.get('click_delay_ms', 500)
             self.page.locator(advance_locator).click()
-            self.page.wait_for_timeout(click_delay_sec)
+            self.page.wait_for_timeout(click_delay_ms)
         except Exception as e:
             success = False
             errors = f'ERROR. failed to advance to next page. {e}'
@@ -250,40 +253,49 @@ class MCFSiteBrowser(ChromeBrowser):
         try:
             page_element = self.get_page_element('job_post', 'apply_button')
             apply_selector = page_element.get('button_selector', '')
-            self.page.wait_for_selector(apply_selector, timeout=5000)
-            submit_locator = self.page.locator(apply_selector)
+            click_delay_ms = page_element.get('click_delay_ms', 500)
 
-            # Case 1: Apply button is present → proceed with click
-            if submit_locator.is_visible() and submit_locator.is_enabled():
-                click_delay_sec = page_element.get('click_delay_sec', '')
-                success = True
-                apply_status = '01_applied'
-                self.page.click(apply_selector)
-                self.page.wait_for_timeout(click_delay_sec)
-            else:
-                # Case 2: Apply button not found — check page content for closed or already applied
-                apply_msg_text = ''
-                page_element = self.get_page_element('job_post', 'apply_message')
-                message_selector = page_element.get('message_selector', '')
-                apply_msg_locator = self.page.locator(message_selector)
-                if apply_msg_locator:
-                    apply_msg_text = apply_msg_locator.inner_text().lower()
+            for attempt in range(MAX_RETRY):
+                try:
+                    self.page.wait_for_selector(apply_selector, timeout=5000)
+                    submit_locator = self.page.locator(apply_selector)
+                    # Case 1: Apply button is present → proceed with click
+                    if submit_locator.is_visible() and submit_locator.is_enabled():
+                        success = True
+                        apply_status = '01_applied'
+                        submit_locator.click()
+                        self.page.wait_for_timeout(click_delay_ms)
+                        break
+                    else:
+                        # Case 2: Apply button not found — check page content for closed or already applied
+                        apply_msg_text = ''
+                        page_element = self.get_page_element('job_post', 'apply_message')
+                        message_selector = page_element.get('message_selector', '')
+                        apply_msg_locator = self.page.locator(message_selector)
+                        if apply_msg_locator:
+                            apply_msg_text = apply_msg_locator.inner_text().lower()
 
-                if 'already' in apply_msg_text or 'applied' in apply_msg_text:
-                    #message: "you have already applied for this job"
-                    success = True
-                    apply_status = '01_applied'
-                    errors = 'INFO. Job already applied.'
-                elif 'closed' in apply_msg_text or 'no longer' in apply_msg_text:
-                    # message: "applications have closed for this job"
-                    apply_status = '07_post_closed'
-                    errors = 'INFO. Application has closed.'
-                else:
-                    apply_status = '04_not_open_to_apply'
-                    errors = 'WARNING. Apply button not found and no matching message detected.'
+                        if 'already' in apply_msg_text or 'applied' in apply_msg_text:
+                            #message: "you have already applied for this job"
+                            success = True
+                            apply_status = '01_applied'
+                            errors = 'INFO. Job already applied.'
+                            break
+                        elif 'closed' in apply_msg_text or 'no longer' in apply_msg_text:
+                            # message: "applications have closed for this job"
+                            apply_status = '07_post_closed'
+                            errors = 'INFO. Application has closed.'
+                            break
+
+                except Exception:
+                    self.page.wait_for_timeout(RETRY_DELAY_MS)
+
+            if apply_status == '':
+                apply_status = '04_unable_to_apply'
+                errors = f'WARNING. Apply button not found and no matching message detected after {MAX_RETRY} retry attempts.'
 
         except Exception as e:
-            apply_status = '04_not_open_to_apply'
+            apply_status = '04_unable_to_apply'
             errors = f'ERROR. Exception occurred while starting application: {e}'
 
         return success, apply_status, errors
