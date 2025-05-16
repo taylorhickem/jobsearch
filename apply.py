@@ -455,20 +455,51 @@ def fetch_jobs_to_apply():
     global jobs_to_apply, apply_results
     fetch_success = True
     fetch_errors = ''
+    to_apply_count = 0
     if LOGGING_LEVEL == 0:
         print(f'INFO. fetching jobs to apply from google sheets ...')
 
     try:
         db.load()
         in_process = db.get_sheet(TO_APPLY_GSHEET)
+        prior_results = db.get_sheet(RESULTS_GSHEET)
     except Exception as e:
         fetch_success = False
         extra_info = 'blank column in google sheet. consider adding empty string to errors' if 'passed, passed' in str(e) else ''
-        fetch_errors = f'ERROR. problem fetching jobs to apply from google sheet {TO_APPLY_GSHEET}. {extra_info} {e}'
+        fetch_errors = f'ERROR. problem fetching jobs to apply from google sheet {TO_APPLY_GSHEET} and in process from {RESULTS_GSHEET}. {extra_info} {e}'
     else:
         if LOGGING_LEVEL == 0:
             print(f'INFO. fetched google sheet {TO_APPLY_GSHEET}. processing jobs from table ...')
-        to_apply_unvalidated = in_process.to_dict(orient='records')
+        open_attempts_df = in_process.copy()
+        applied_exclude = []
+        applied_count = 0
+        if len(prior_results) > 0:
+            already_applied = list(set(prior_results[prior_results['applied'] == '1']['jobid']))
+            applied_count = len(already_applied)
+        if applied_count > 0:
+            try:
+                applied_exclude = in_process[in_process['jobid'].isin(already_applied)].copy()
+                open_attempts_df = in_process[~in_process['jobid'].isin(already_applied)].copy()
+            except Exception as e:
+                print(f"""WARNING. found {applied_count} application{'s' if applied_count>1 else ''} 
+                      already completed but failed to exclude them. 
+                      \n Including them in the list of jobs to apply. {e}""")
+            else:
+                if len(applied_exclude) > 0:
+                    if LOGGING_LEVEL == 0:
+                        print(f'INFO. excluding {len(applied_exclude)} jobs which have already been applied.')
+                    to_exclude = applied_exclude.to_dict(orient='records')
+                    for j in to_exclude:
+                        apply_result = {
+                            'jobid': j.get('jobid', '*'),
+                            'applied': 1,
+                            'apply_result': '01_applied',
+                            'errors': 'INFO. already applied.'
+                        }
+                        apply_results.append(apply_result)
+                if len(open_attempts_df) == 0:
+                    fetch_errors = 'all open jobs already applied for'
+        to_apply_unvalidated = open_attempts_df.to_dict(orient='records')
         to_apply_count = len(to_apply_unvalidated)
 
     if fetch_success:
@@ -484,7 +515,7 @@ def fetch_jobs_to_apply():
                         print(f'WARNING. invalid job input {apply_result}. skipping job.')
                     apply_results.append(apply_result)
         else:
-            fetch_errors = 'INFO. no jobs to apply found from google sheet.'
+            fetch_errors = f'INFO. no jobs to apply found from google sheet. {fetch_errors}'
 
     return fetch_success, fetch_errors
 
