@@ -30,6 +30,9 @@ JOB_SLUG_SAMPLE = '/information-technology/data-engineer-python-ci-cd-devops-dat
 COOKIES_JSON_FILE = 'cookies_mcf.json'
 LOGGING_LEVEL = 1
 BROWSER_HEADLESS = True
+MAX_RETRY = 5
+PAGE_DELAY_MS = 500
+RETRY_DELAY_MS = 5000
 TO_APPLY_GSHEET = 'apply_in_process'
 RESULTS_GSHEET = 'apply_results'
 TO_APPLY_FIELDS = [
@@ -48,7 +51,7 @@ SITE_ELEMENTS = [
                 'page': 'job_post',
                 'element': 'apply_button',
                 'button_selector': 'button#job-details-apply-button',
-                'click_delay_sec': 500
+                'click_delay_ms': PAGE_DELAY_MS
             },
             {
                 'page': 'job_post',
@@ -59,7 +62,7 @@ SITE_ELEMENTS = [
                 'page': 'job_apply',
                 'element': 'page_advance',
                 'button_locator': 'button#application-details-save-button',
-                'click_delay_sec': 500
+                'click_delay_ms': PAGE_DELAY_MS
             },
             {
                 'page': 'cv_select',
@@ -234,9 +237,9 @@ class MCFSiteBrowser(ChromeBrowser):
         try:
             page_element = self.get_page_element('job_apply', 'page_advance')
             advance_locator = page_element.get('button_locator', '')
-            click_delay_sec = page_element.get('click_delay_sec', '')
+            click_delay_ms = page_element.get('click_delay_ms', 500)
             self.page.locator(advance_locator).click()
-            self.page.wait_for_timeout(click_delay_sec)
+            self.page.wait_for_timeout(click_delay_ms)
         except Exception as e:
             success = False
             errors = f'ERROR. failed to advance to next page. {e}'
@@ -250,40 +253,49 @@ class MCFSiteBrowser(ChromeBrowser):
         try:
             page_element = self.get_page_element('job_post', 'apply_button')
             apply_selector = page_element.get('button_selector', '')
-            self.page.wait_for_selector(apply_selector, timeout=5000)
-            submit_locator = self.page.locator(apply_selector)
+            click_delay_ms = page_element.get('click_delay_ms', 500)
 
-            # Case 1: Apply button is present → proceed with click
-            if submit_locator.is_visible() and submit_locator.is_enabled():
-                click_delay_sec = page_element.get('click_delay_sec', '')
-                success = True
-                apply_status = '01_applied'
-                self.page.click(apply_selector)
-                self.page.wait_for_timeout(click_delay_sec)
-            else:
-                # Case 2: Apply button not found — check page content for closed or already applied
-                apply_msg_text = ''
-                page_element = self.get_page_element('job_post', 'apply_message')
-                message_selector = page_element.get('message_selector', '')
-                apply_msg_locator = self.page.locator(message_selector)
-                if apply_msg_locator:
-                    apply_msg_text = apply_msg_locator.inner_text().lower()
+            for attempt in range(MAX_RETRY):
+                try:
+                    self.page.wait_for_selector(apply_selector, timeout=5000)
+                    submit_locator = self.page.locator(apply_selector)
+                    # Case 1: Apply button is present → proceed with click
+                    if submit_locator.is_visible() and submit_locator.is_enabled():
+                        success = True
+                        apply_status = '01_applied'
+                        submit_locator.click()
+                        self.page.wait_for_timeout(click_delay_ms)
+                        break
+                    else:
+                        # Case 2: Apply button not found — check page content for closed or already applied
+                        apply_msg_text = ''
+                        page_element = self.get_page_element('job_post', 'apply_message')
+                        message_selector = page_element.get('message_selector', '')
+                        apply_msg_locator = self.page.locator(message_selector)
+                        if apply_msg_locator:
+                            apply_msg_text = apply_msg_locator.inner_text().lower()
 
-                if 'already' in apply_msg_text or 'applied' in apply_msg_text:
-                    #message: "you have already applied for this job"
-                    success = True
-                    apply_status = '01_applied'
-                    errors = 'INFO. Job already applied.'
-                elif 'closed' in apply_msg_text or 'no longer' in apply_msg_text:
-                    # message: "applications have closed for this job"
-                    apply_status = '07_post_closed'
-                    errors = 'INFO. Application has closed.'
-                else:
-                    apply_status = '04_not_open_to_apply'
-                    errors = 'WARNING. Apply button not found and no matching message detected.'
+                        if 'already' in apply_msg_text or 'applied' in apply_msg_text:
+                            #message: "you have already applied for this job"
+                            success = True
+                            apply_status = '01_applied'
+                            errors = 'INFO. Job already applied.'
+                            break
+                        elif 'closed' in apply_msg_text or 'no longer' in apply_msg_text:
+                            # message: "applications have closed for this job"
+                            apply_status = '07_post_closed'
+                            errors = 'INFO. Application has closed.'
+                            break
+
+                except Exception:
+                    self.page.wait_for_timeout(RETRY_DELAY_MS)
+
+            if apply_status == '':
+                apply_status = '04_unable_to_apply'
+                errors = f'WARNING. Apply button not found and no matching message detected after {MAX_RETRY} retry attempts.'
 
         except Exception as e:
-            apply_status = '04_not_open_to_apply'
+            apply_status = '04_unable_to_apply'
             errors = f'ERROR. Exception occurred while starting application: {e}'
 
         return success, apply_status, errors
@@ -443,20 +455,51 @@ def fetch_jobs_to_apply():
     global jobs_to_apply, apply_results
     fetch_success = True
     fetch_errors = ''
+    to_apply_count = 0
     if LOGGING_LEVEL == 0:
         print(f'INFO. fetching jobs to apply from google sheets ...')
 
     try:
         db.load()
         in_process = db.get_sheet(TO_APPLY_GSHEET)
+        prior_results = db.get_sheet(RESULTS_GSHEET)
     except Exception as e:
         fetch_success = False
         extra_info = 'blank column in google sheet. consider adding empty string to errors' if 'passed, passed' in str(e) else ''
-        fetch_errors = f'ERROR. problem fetching jobs to apply from google sheet {TO_APPLY_GSHEET}. {extra_info} {e}'
+        fetch_errors = f'ERROR. problem fetching jobs to apply from google sheet {TO_APPLY_GSHEET} and in process from {RESULTS_GSHEET}. {extra_info} {e}'
     else:
         if LOGGING_LEVEL == 0:
             print(f'INFO. fetched google sheet {TO_APPLY_GSHEET}. processing jobs from table ...')
-        to_apply_unvalidated = in_process.to_dict(orient='records')
+        open_attempts_df = in_process.copy()
+        applied_exclude = []
+        applied_count = 0
+        if len(prior_results) > 0:
+            already_applied = list(set(prior_results[prior_results['applied'] == '1']['jobid']))
+            applied_count = len(already_applied)
+        if applied_count > 0:
+            try:
+                applied_exclude = in_process[in_process['jobid'].isin(already_applied)].copy()
+                open_attempts_df = in_process[~in_process['jobid'].isin(already_applied)].copy()
+            except Exception as e:
+                print(f"""WARNING. found {applied_count} application{'s' if applied_count>1 else ''} 
+                      already completed but failed to exclude them. 
+                      \n Including them in the list of jobs to apply. {e}""")
+            else:
+                if len(applied_exclude) > 0:
+                    if LOGGING_LEVEL == 0:
+                        print(f'INFO. excluding {len(applied_exclude)} jobs which have already been applied.')
+                    to_exclude = applied_exclude.to_dict(orient='records')
+                    for j in to_exclude:
+                        apply_result = {
+                            'jobid': j.get('jobid', '*'),
+                            'applied': 1,
+                            'apply_result': '01_applied',
+                            'errors': 'INFO. already applied.'
+                        }
+                        apply_results.append(apply_result)
+                if len(open_attempts_df) == 0:
+                    fetch_errors = 'all open jobs already applied for'
+        to_apply_unvalidated = open_attempts_df.to_dict(orient='records')
         to_apply_count = len(to_apply_unvalidated)
 
     if fetch_success:
@@ -472,7 +515,7 @@ def fetch_jobs_to_apply():
                         print(f'WARNING. invalid job input {apply_result}. skipping job.')
                     apply_results.append(apply_result)
         else:
-            fetch_errors = 'INFO. no jobs to apply found from google sheet.'
+            fetch_errors = f'INFO. no jobs to apply found from google sheet. {fetch_errors}'
 
     return fetch_success, fetch_errors
 

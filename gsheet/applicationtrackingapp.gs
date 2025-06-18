@@ -14,10 +14,10 @@ var kw_tags_sht = ss.getSheetByName("keyword_tags");
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu('JobsearchApp')
-      .addItem('Close leads','closeLeads')
-      .addItem('Record applications','recordApplications')
       .addItem('Record track assignments','recordTrackAssignments')
-      .addItem('record KPIs','recordKPIs')
+      .addItem('Record applications','recordApplications')
+      .addItem('Select in process applications','selectApplyInProcess')
+      .addItem('Close leads','closeLeads')
       .addToUi();
 }
 
@@ -80,6 +80,8 @@ function recordApplications() {
 
   // update selections with application results
   selectApplySuccess()
+  // clear jobs that are no longer in-process
+  clearApplyInProcess()
 
   var Napplyfields = 13
   var Nscreened = screened_sht.getLastRow()-1;
@@ -120,8 +122,6 @@ function recordApplications() {
     open_sht.getRange(Nopen + 1, 1, applyRows.length, Napplyfields).setValues(applyRows);
   }  
 
-  // clear jobs that are no longer in-process
-  clearApplyInProcess()
 }
 
 
@@ -430,6 +430,36 @@ function clearApplyInProcess() {
     Logger.log("apply_results fully cleared (no retained rows).");
   }
 }
+
+function selectApplyInProcess() {
+  const applySheet = ss.getSheetByName("apply_results");
+  const screenedSheet = ss.getSheetByName("screened");
+
+  // Step 1: Collect jobids with applied = 0 (i.e., failed)
+  const resultsJobids = applySheet.getRange("A2:A" + lastNonEmptyRow(applySheet)).getValues();
+  const jobidList = resultsJobids.map(row => row[0]); 
+  const jobidInProcess = new Set(jobidList);
+
+  Logger.log(`Found ${jobidInProcess.size} job(s) to select`);
+  Logger.log([...jobidInProcess].join("\n"));
+
+  // Step 2: Update "apply" column in screened sheet
+  const screenedRange = screenedSheet.getRange("E2:R" + lastNonEmptyRow(screenedSheet));
+  const screenedData = screenedRange.getValues();
+
+    for (let i = 0; i < screenedData.length; i++) {
+      const jobid = screenedData[i][0];  // column E
+      if (jobidInProcess.has(jobid)) {
+        screenedData[i][13] = 1;  // column R (index 13) = apply
+    }
+  }
+
+  // Step 3: Write updated "apply" column (R)
+  const applyColRange = screenedSheet.getRange("R2:R" + (screenedData.length + 1));
+  const updatedApplyColumn = screenedData.map(row => [row[13]]);
+  applyColRange.setValues(updatedApplyColumn);
+}
+
 
 function getColumn(array2D,col_index){
   // selects column i and returns as a 1D array (list)
