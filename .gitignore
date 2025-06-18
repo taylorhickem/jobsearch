@@ -4,6 +4,7 @@
 *.db
 *.sqlite3
 *.csv
+cookies_mcf.json
 apply_automation_features.txt
 job_apply_workflow.png
 __pycache__
