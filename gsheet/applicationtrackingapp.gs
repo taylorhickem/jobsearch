@@ -87,7 +87,7 @@ function recordApplications() {
   var Nscreened = screened_sht.getLastRow()-1;
   var Nscreenfields = ss.getRangeByName("screened_data_hdr").getNumColumns();  
   var screenedData = ss.getRangeByName("screened_data_hdr").offset(1,0,Nscreened,Nscreenfields).getValues();
-  var to_apply_range = ss.getRangeByName("to_apply_hdr").offset(1,0,Nscreened,1).getValues();
+  var to_apply_range = ss.getRangeByName("to_apply_hdr").offset(1,0,Nscreened,1);
   var to_apply = to_apply_range.getValues();
   var applyRows = [];
   var clearedFlags = to_apply.map(row => [0]); 
