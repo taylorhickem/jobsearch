@@ -87,8 +87,10 @@ function recordApplications() {
   var Nscreened = screened_sht.getLastRow()-1;
   var Nscreenfields = ss.getRangeByName("screened_data_hdr").getNumColumns();  
   var screenedData = ss.getRangeByName("screened_data_hdr").offset(1,0,Nscreened,Nscreenfields).getValues();
-  var to_apply = ss.getRangeByName("to_apply_hdr").offset(1,0,Nscreened,1).getValues();
+  var to_apply_range = ss.getRangeByName("to_apply_hdr").offset(1,0,Nscreened,1).getValues();
+  var to_apply = to_apply_range.getValues();
   var applyRows = [];
+  var clearedFlags = to_apply.map(row => [0]); 
 
   // isolate leads to apply from screened
   for (var i = 0; i < screenedData.length; i++) {
@@ -101,8 +103,8 @@ function recordApplications() {
         applyRow.push(screenedRow[3]) //               02 url
         applyRow.push(screenedRow[0]) //               03 title
         applyRow.push(screenedRow[1]) //               04 company
-        applyRow.push('') //                           05 lead source
-        applyRow.push('') //                           06 apply method
+        applyRow.push('MyCareerFutures') //            05 lead source
+        applyRow.push('1click') //                     06 apply method
         applyRow.push(screenedRow[9]) //               07 deadline
         applyRow.push(new Date()) //                   08 applied
         applyRow.push('') //                           09 1st attempt
@@ -112,7 +114,6 @@ function recordApplications() {
         applyRow.push('pending callback') //           13 status
 
         applyRows.push(applyRow);
-        ss.getRangeByName("to_apply_hdr").offset(i + 1, 0, 1, 1).clearContent();
     }
   }  
 
@@ -122,6 +123,8 @@ function recordApplications() {
     open_sht.getRange(Nopen + 1, 1, applyRows.length, Napplyfields).setValues(applyRows);
   }  
 
+  // clear the apply flags
+  to_apply_range.setValues(clearedFlags);
 }
 
 
