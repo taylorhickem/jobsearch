@@ -11,13 +11,18 @@ profiles = None
 
 mainURL = ''
 FIELD_CONFIG = {
+    'is_open': {'tag_class': 'span',
+               'html_keyword': 'job-details-info-job-expiry-date',
+               'drop_chr': '',
+               'match_chr': 'Closed',
+               'type': 'bool'},
     'mcf_ref': {'tag_class': 'span',
                'html_keyword': 'job-details-info-job-post-id',
                'drop_chr': '',
                'type': 'string'},
     'closing_date': {'tag_class': 'span',
                'html_keyword': 'job-details-info-job-expiry-date',
-               'drop_chr': 'Closing on ',
+               'drop_chr': ['Closing on '],
                 'datetime_format': '%d %b %Y',
                'type': 'date'},
     'years_experience': {'tag_class': 'p',
@@ -53,7 +58,9 @@ def load(db_only=False):
 
 def update_job_profiles(limit=200, progress_updates=False):
     progress_increments = 10
-    profileRcds = []; failed = []
+    profileRcds = []
+    failed = []
+    closed = []
     profileids = get_profile_ids()
     if profileids is not None:
         idList = profileids.values.tolist()
@@ -63,15 +70,21 @@ def update_job_profiles(limit=200, progress_updates=False):
             starttime = time.time()
             profile_count = 0
         for prfid in idList:
+            jobid = prfid[0]
             try:
-                rcd = get_profileRecord(prfid[1], prfid[0], mainURL)
-                profileRcds.append(rcd)
-            except:
-                print('error encountered while trying to parse profile page for job %s ' % prfid[0])
+                rcd = get_profileRecord(prfid[1], jobid, mainURL)
+            except Exception as e:
+                print(f'error encountered while trying to parse profile page for job {jobid} {e}')
                 failed.append(prfid)
+            else:
+                is_open = rcd.pop('is_open')
+                if is_open:
+                    profileRcds.append(rcd)
+                else:
+                    closed.append(rcd)
 
             if progress_updates:
-                profile_count = len(profileRcds)
+                profile_count = len(profileRcds)                
                 if profile_count % progress_increments == 0:
                     elapsed_sec = time.time() - starttime
                     print('captured %s profiles in %.1f sec ' % (profile_count, elapsed_sec))
@@ -79,6 +92,12 @@ def update_job_profiles(limit=200, progress_updates=False):
         num_failed = len(failed)
         if num_failed > 0:
             print('%d profile(s) encountered an error' % num_failed)
+
+        num_closed = len(closed)
+        if num_closed > 0:
+            print('%d profile(s) are already closed' % num_closed)
+            db.remove_jobs([rcd['jobid'] for rcd in closed])
+
         profiles = pd.DataFrame.from_records(profileRcds)
         update_db(profiles)
 
@@ -110,9 +129,11 @@ def get_profileRecord(urlid, jobid='', mainURL=None):
         fieldValue = None
         fldcfg = FIELD_CONFIG[field_name]
         fieldStr = get_tag_element(pageSoup, fldcfg['tag_class'],
-                                   fldcfg['html_keyword'], fldcfg['drop_chr'])
+                                   fldcfg['html_keyword'], fldcfg.get('drop_chr', ''), match_chr=fldcfg.get('match_chr', ''))
         if not fieldStr is None:
-            if fldcfg['type'] == 'int':
+            if field_name == 'is_open':
+                fieldValue = fieldStr != fldcfg.get('match_chr', '')
+            elif fldcfg['type'] == 'int':
                 fieldValue = int(fieldStr)
             elif fldcfg['type'] == 'date':
                 fieldValue = dt.datetime.strptime(fieldStr, fldcfg['datetime_format']).date()
@@ -121,25 +142,34 @@ def get_profileRecord(urlid, jobid='', mainURL=None):
         return fieldValue
 
     #extract fields
-    mcf_ref = get_profile_fieldValue('mcf_ref') #2025-05-01 17:03 
-    closing_date = get_profile_fieldValue('closing_date') #2025-05-01 17:11
-    applicantsInt = get_profile_fieldValue('applicants') #2025-05-01 17:21
-    industry_classification = get_profile_fieldValue('industry_classification') #2025-05-01 17:26
+    is_open = get_profile_fieldValue('is_open') # 
+    if is_open:
+        mcf_ref = get_profile_fieldValue('mcf_ref') #2025-05-01 17:03 
+        closing_date = get_profile_fieldValue('closing_date') #2025-05-01 17:11
+        applicantsInt = get_profile_fieldValue('applicants') #2025-05-01 17:21
+        industry_classification = get_profile_fieldValue('industry_classification') #2025-05-01 17:26
 
-    #years of experience (int) plural and singular case
-    #yrsexpStr = get_profile_fieldValue('years_experience')
-    #yrsexpInt = int(yrsexpStr.replace(' year exp', '').replace(' years exp', '')) if yrsexpStr else None
+        #years of experience (int) plural and singular case
+        #yrsexpStr = get_profile_fieldValue('years_experience')
+        #yrsexpInt = int(yrsexpStr.replace(' year exp', '').replace(' years exp', '')) if yrsexpStr else None
+
+        fldcfg = FIELD_CONFIG['description']  #2025-05-01 17:52
+        desStr = get_tag_element(pageSoup, fldcfg['tag_class'],
+                                fldcfg['html_keyword'],
+                                fldcfg['drop_chr'],
+                                subclass=fldcfg['subclass'],
+                                return_type=fldcfg['return_type'])
+    else:
+        mcf_ref = ''
+        closing_date = ''
+        applicantsInt = 0
+        industry_classification = ''
+        desStr = ''
+
     yrsexpInt = None # deprecated
 
-    #description (string)
-    fldcfg = FIELD_CONFIG['description']  #2025-05-01 17:52
-    desStr = get_tag_element(pageSoup, fldcfg['tag_class'],
-                               fldcfg['html_keyword'],
-                               fldcfg['drop_chr'],
-                               subclass=fldcfg['subclass'],
-                               return_type=fldcfg['return_type'])
-
-    rcd = {'jobid': jobid,
+    rcd = {'is_open':is_open,
+            'jobid': jobid,
            'url': url,
            'mcf_ref': mcf_ref,
            'closing_date': closing_date,
@@ -162,6 +192,7 @@ def get_tag_element(tagObj,
                     tag_class,
                     html_keyword,
                     drop_chr='',
+                    match_chr='',
                     subclass=None,
                     return_type='string'):
     element = None
@@ -178,11 +209,15 @@ def get_tag_element(tagObj,
         if return_type == 'contents':
             element = leaftags[0].contents
         elif return_type == 'string':
-            raw_element = leaftags[0].string
-            if drop_chr != '':
-                element = raw_element.replace(drop_chr, '').replace('s', '')
-            else:
-                element = raw_element
+            element = leaftags[0].string
+            if match_chr:
+                element = match_chr if match_chr in element else ''
+            elif isinstance(drop_chr, list):
+                for chr in drop_chr:
+                    element = element.replace(chr, '').replace('s', '')
+            elif drop_chr:
+                element = element.replace(drop_chr, '').replace('s', '')
+
     return element
 
 def query_url(url):

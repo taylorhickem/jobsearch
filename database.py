@@ -2,6 +2,8 @@ import json
 import pandas as pd
 import datetime as dt
 from sqlalchemy import create_engine
+from sqlalchemy import bindparam
+from sqlalchemy import text as sqla_text
 from sqlalchemy.engine.reflection import Inspector
 import gsheet.api as gs
 
@@ -140,6 +142,17 @@ def get_jobs():
     global engine
     jobs = pd.read_sql_table('job',con=engine)
     return jobs
+
+
+def remove_jobs(jobids):
+    if jobids:
+        stmt = sqla_text("DELETE FROM job WHERE jobid IN :ids").bindparams(
+            bindparam("ids", expanding=True)
+        )
+        # this works for sqlite but not necessarily for other backend
+        with engine.connect() as conn:
+            conn.execute(stmt, {"ids": jobids})
+
 
 def get_table(tableName):
     if table_exists(tableName):
