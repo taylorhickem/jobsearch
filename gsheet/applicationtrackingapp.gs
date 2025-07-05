@@ -17,6 +17,7 @@ function onOpen() {
       .addItem('Record track assignments','recordTrackAssignments')
       .addItem('Record applications','recordApplications')
       .addItem('Select in process applications','selectApplyInProcess')
+      .addItem('Update expired','updateOpenExpired')
       .addItem('Close leads','closeLeads')
       .addToUi();
 }
@@ -42,6 +43,8 @@ function KPIrow(kpi, value) {
 }
 
 function closeLeads() {
+  updateOpenExpired()
+  
   var Napplied = open_sht.getLastRow()-2;
   var Nfields = ss.getRangeByName("open_hdr").getNumColumns();  
   var appliedData = ss.getRangeByName("open_hdr").offset(2,0,Napplied,Nfields).getValues();
@@ -90,7 +93,7 @@ function recordApplications() {
   var to_apply_range = ss.getRangeByName("to_apply_hdr").offset(1,0,Nscreened,1);
   var to_apply = to_apply_range.getValues();
   var applyRows = [];
-  var clearedFlags = to_apply.map(row => [0]); 
+  var clearedFlags = to_apply.map(row => [""]); 
 
   // isolate leads to apply from screened
   for (var i = 0; i < screenedData.length; i++) {
@@ -463,6 +466,37 @@ function selectApplyInProcess() {
   applyColRange.setValues(updatedApplyColumn);
 }
 
+function updateOpenExpired() {
+  const open = ss.getSheetByName("open");
+  const lastRow = lastNonEmptyRow(open);
+  
+  // Column G (deadline) to Column M (status)
+  const openData = open.getRange("G3:M" + lastRow).getValues();
+  const statusUpdates = [];
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);  // Normalize to midnight for reliable comparison
+
+  openData.forEach(row => {
+    const deadlineStr = row[0];         // Column G (deadline)
+    const currentStatus = row[6];       // Column M (status)
+
+    let newStatus = currentStatus;
+    const deadline = new Date(deadlineStr);
+
+    if (deadlineStr && deadline instanceof Date && !isNaN(deadline)) {
+      if (deadline < today) {
+        newStatus = "expired";
+      }
+    }
+
+    statusUpdates.push([newStatus]);
+  });
+
+  // Write back to Column M (status)
+  const statusRange = open.getRange("M3:M" + (2 + statusUpdates.length));
+  statusRange.setValues(statusUpdates);
+}
 
 function getColumn(array2D,col_index){
   // selects column i and returns as a 1D array (list)
